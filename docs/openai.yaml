@@ -1,0 +1,757 @@
+```yaml
+openapi: 3.0.3
+
+info:
+  title: AI Coding CLI API
+  version: 1.0.0
+  description: >
+    REST API for an AI coding CLI with user accounts, projects,
+    and cloud-synchronized coding sessions.
+
+servers:
+  - url: http://localhost:8080
+    description: Development server with port forwarding for testing from other computers
+
+  - url: https://api.example.com
+    description: Production server
+
+
+paths:
+
+  /auth/login:
+    post:
+      summary: Log into the CLI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid email or password
+
+
+  /auth/logout:
+    post:
+      summary: Log out of the CLI
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Successfully logged out
+        '401':
+          description: User is not authenticated
+
+
+  /users:
+    post:
+      summary: Create a user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: User account successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid account information
+        '409':
+          description: Account already exists
+
+
+  /users/me:
+    get:
+      summary: Get the logged-in user's account
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: User is not authenticated
+
+    patch:
+      summary: Update the logged-in user's account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: User successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid account information
+        '401':
+          description: User is not authenticated
+
+    delete:
+      summary: Delete the logged-in user's account
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: User account successfully deleted
+        '401':
+          description: User is not authenticated
+
+
+  /projects:
+    get:
+      summary: Get the user's projects
+      description: Retrieves projects belonging to the logged-in user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: name
+          required: false
+          schema:
+            type: string
+          description: Search projects by name
+
+        - in: query
+          name: language
+          required: false
+          schema:
+            type: string
+          description: Filter projects by programming language
+
+      responses:
+        '200':
+          description: A list of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        '401':
+          description: User is not authenticated
+
+    post:
+      summary: Create a project
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Project successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Invalid project information
+        '401':
+          description: User is not authenticated
+
+
+  /projects/{projectId}:
+    parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+        description: Unique identifier of the project
+
+    get:
+      summary: Get a specific project
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Project information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          description: Project not found
+
+    patch:
+      summary: Update a project
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      responses:
+        '200':
+          description: Project successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          description: Project not found
+
+    delete:
+      summary: Delete a project
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Project successfully deleted
+        '404':
+          description: Project not found
+
+
+  /sessions:
+    get:
+      summary: Get the user's synchronized coding sessions
+      description: >
+        Returns coding sessions stored in the cloud for the logged-in user.
+        Sessions can be filtered by project, status, creation date, or a search term.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: projectId
+          required: false
+          schema:
+            type: string
+          description: Filter sessions by project
+
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - completed
+              - archived
+          description: Filter sessions by status
+
+        - in: query
+          name: createdAfter
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Return sessions created after this date
+
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+          description: Search sessions by title
+
+      responses:
+        '200':
+          description: A list of synchronized coding sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '401':
+          description: User is not authenticated
+
+    post:
+      summary: Create a new coding session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCreate'
+      responses:
+        '201':
+          description: Coding session successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: Invalid session information
+
+
+  /sessions/{sessionId}:
+    parameters:
+      - in: path
+        name: sessionId
+        required: true
+        schema:
+          type: string
+        description: Unique identifier of the coding session
+
+    get:
+      summary: Get a specific coding session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coding session information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: Session not found
+
+    patch:
+      summary: Update a coding session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionUpdate'
+      responses:
+        '200':
+          description: Coding session successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: Session not found
+
+    delete:
+      summary: Delete a coding session
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Coding session successfully deleted
+        '404':
+          description: Session not found
+
+
+  /sessions/{sessionId}/messages:
+    parameters:
+      - in: path
+        name: sessionId
+        required: true
+        schema:
+          type: string
+        description: Unique identifier of the coding session
+
+    get:
+      summary: Get messages from a coding session
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: role
+          required: false
+          schema:
+            type: string
+            enum:
+              - user
+              - assistant
+              - system
+          description: Filter messages by sender role
+
+        - in: query
+          name: after
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Return messages created after this time
+
+      responses:
+        '200':
+          description: A list of messages from the session
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+        '404':
+          description: Session not found
+
+    post:
+      summary: Add a message to a coding session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageCreate'
+      responses:
+        '201':
+          description: Message successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '404':
+          description: Session not found
+
+
+  /sessions/{sessionId}/tasks:
+    parameters:
+      - in: path
+        name: sessionId
+        required: true
+        schema:
+          type: string
+        description: Unique identifier of the coding session
+
+    get:
+      summary: Get tasks from a coding session
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - running
+              - completed
+              - failed
+              - cancelled
+          description: Filter tasks by status
+
+      responses:
+        '200':
+          description: A list of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '404':
+          description: Session not found
+
+    post:
+      summary: Create a task in a coding session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Task successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          description: Session not found
+
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: password123
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiJ9.example
+        tokenType:
+          type: string
+          example: Bearer
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: usr_123
+        username:
+          type: string
+          example: osirisuser
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T12:00:00Z
+
+    UserCreate:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          example: osirisuser
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: password123
+
+    UserUpdate:
+      type: object
+      properties:
+        username:
+          type: string
+          example: newusername
+        email:
+          type: string
+          format: email
+          example: newemail@example.com
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          example: prj_123
+        name:
+          type: string
+          example: Elara
+        language:
+          type: string
+          example: C++
+        repositoryUrl:
+          type: string
+          example: https://github.com/example/elara
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T12:00:00Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T14:30:00Z
+
+    ProjectCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Elara
+        language:
+          type: string
+          example: C++
+        repositoryUrl:
+          type: string
+          example: https://github.com/example/elara
+
+    ProjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Elara
+        language:
+          type: string
+          example: C++
+        repositoryUrl:
+          type: string
+          example: https://github.com/example/elara
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          example: ses_123
+        projectId:
+          type: string
+          example: prj_123
+        title:
+          type: string
+          example: Fix renderer crash
+        status:
+          type: string
+          enum:
+            - active
+            - completed
+            - archived
+          example: active
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T12:00:00Z
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T14:30:00Z
+
+    SessionCreate:
+      type: object
+      required:
+        - projectId
+        - title
+      properties:
+        projectId:
+          type: string
+          example: prj_123
+        title:
+          type: string
+          example: Fix renderer crash
+
+    SessionUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Fix renderer and input crash
+        status:
+          type: string
+          enum:
+            - active
+            - completed
+            - archived
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          example: msg_123
+        sessionId:
+          type: string
+          example: ses_123
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+            - system
+          example: user
+        content:
+          type: string
+          example: Find the cause of the renderer crash.
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T12:05:00Z
+
+    MessageCreate:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+            - system
+          example: user
+        content:
+          type: string
+          example: Find the cause of the renderer crash.
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          example: task_123
+        sessionId:
+          type: string
+          example: ses_123
+        description:
+          type: string
+          example: Inspect renderer.cpp for the source of the crash.
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - completed
+            - failed
+            - cancelled
+          example: running
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-09-22T12:10:00Z
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+
+    TaskCreate:
+      type: object
+      required:
+        - description
+      properties:
+        description:
+          type: string
+          example: Inspect renderer.cpp for the source of the crash.
+```
