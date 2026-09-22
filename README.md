@@ -112,7 +112,7 @@ Osiris is designed primarily around **Rust**, using it for both the local coding
 - **SQLx** — Asynchronous Rust database library used to communicate with PostgreSQL.
 - **JWT Authentication** — Bearer-token authentication used to authenticate CLI requests to the Osiris API.
 - **Argon2** — Password hashing used to securely store account credentials.
-- **OpenAPI 3.0** — Defines and documents the contract between the Osiris CLI and REST API.
+- **OpenAPI 3.0** — Defines and documents the contract between the Osiris CLI and REST API. See the [OpenAPI specification](docs/openai.yaml).
 - **Swagger Editor / Swagger UI** — Used to validate, inspect, and test the OpenAPI specification.
 - **Git** — Version control for Osiris and the external projects that Osiris works with.
 - **GitHub** — Repository hosting and collaborative development.
