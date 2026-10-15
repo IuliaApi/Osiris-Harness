@@ -1,0 +1,10 @@
+{
+  "name": "osiris/build-1",
+  "type": "project",
+  "require": {
+    "php": ">=8.4",
+    "ext-json": "*",
+    "ext-pdo": "*",
+    "ext-pdo_pgsql": "*"
+  }
+}

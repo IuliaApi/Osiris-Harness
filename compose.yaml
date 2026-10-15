@@ -1,0 +1,54 @@
+name: osiris-harness-dev
+services:
+  api:
+    image: osiris-harness-api:dev
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgres://osiris_dev:osiris_dev_local_only@db:5432/${OSIRIS_DATABASE_NAME:-osiris_dev}
+    ports:
+      - "127.0.0.1:${OSIRIS_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 50
+    init: true
+  adminer:
+    image: adminer:5-standalone
+    profiles: ["tools"]
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "127.0.0.1:8083:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 50
+    init: true
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: osiris_dev
+      POSTGRES_USER: osiris_dev
+      POSTGRES_PASSWORD: osiris_dev_local_only
+    ports:
+      - "127.0.0.1:55438:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=20"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U osiris_dev -d osiris_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  pgdata:
