@@ -1,0 +1,79 @@
+{
+  "info": {
+    "name": "Osiris Build 1",
+    "description": "Read seeded sessions on port 8080 and an empty database on port 8081.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": { "type": "noauth" },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8080" },
+    { "key": "emptyBaseUrl", "value": "http://127.0.0.1:8081" }
+  ],
+  "item": [
+    {
+      "name": "List sessions",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/sessions" },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('Canonical seed sessions are present', () => {",
+            "  const sessions = pm.response.json();",
+            "  pm.expect(sessions).to.be.an('array');",
+            "  pm.expect(sessions.map(s => s.id)).to.include.members(['ses_101', 'ses_102', 'ses_103', 'ses_201', 'ses_202']);",
+            "  pm.expect(sessions.find(s => s.id === 'ses_101').title).to.eql('Investigate crash');",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "Get session",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/sessions/ses_101" },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('Seeded ID and title', () => {",
+            "  const session = pm.response.json();",
+            "  pm.expect(session.id).to.eql('ses_101');",
+            "  pm.expect(session.title).to.eql('Investigate crash');",
+            "});"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "Missing session",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/sessions/ses_missing" },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+            "pm.test('Missing session error', () => pm.expect(pm.response.json()).to.eql({error: 'Session not found'}));"
+          ]
+        }
+      }]
+    },
+    {
+      "name": "Empty sessions",
+      "request": { "method": "GET", "header": [], "url": "{{emptyBaseUrl}}/sessions" },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('Empty array', () => pm.expect(pm.response.json()).to.be.an('array').that.is.empty);"
+          ]
+        }
+      }]
+    }
+  ]
+}

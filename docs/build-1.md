@@ -1,142 +1,105 @@
-# Osiris — Build 1 alignment
+# Build 1 delivery record
 
-This is a proposed scope for the approved Osiris project, adapted from the teacher's guidance. Initial database SQL and seed data are now available; the CLI, API, and HTTP demonstration remain a work in progress. Start with [database setup](database-setup.md).
-
-## What this increment proves
-
-A user will be able to  retrieve coding-session metadata from a real relational database through the Osiris web service. A basic browser page and the local CLI can use the same API. The AI harness stays local; the service supplies persistent state.
+Build 1 contains one PHP file, two session-read operations, a browser page, and a relational schema with synthetic data. `SessionController::list()` and `get()` in `backend/public/index.php` execute PDO `SELECT` queries directly. There are no repository classes, identity selection, authentication, filters, write endpoints, or CLI.
 
 ```text
-Browser demo ─┐
-             ├─ HTTP GET → Axum handler → repository → SQLx → PostgreSQL
-Rust CLI ────┘                                                   │
-             ◄──────── displayed result ← JSON response ─────────┘
+Browser -> backend/public/index.php -> SessionController -> PDO -> PostgreSQL
+Browser <- HTTP status and JSON
 ```
 
-Complete both browser reads for the basic service demonstration. CLI read commands are the next small step toward the product. Generating code with a model, executing tools, and fully restoring conversation/tool state are later work.
+## Nine-step demo
 
-## Proposed repository layout
+Requires Docker Desktop with Compose and PowerShell. Run commands from the repository root. Start the app with `.\run.ps1` if it is not already running.
 
-```text
-Cargo.toml                   Rust workspace and shared dependencies
-crates/osiris-cli/           Clap commands and Reqwest API client
-crates/osiris-api/           Axum entry point, routes, handlers, repositories
-database/initialDB.sql    Initial PostgreSQL schema (available)
-database/fakeData.sql           Synthetic demonstration records
-public/                     Minimal browser list/detail demonstration
-docs/openapi.yaml           Validated contract for implemented routes
-requests/build-1.http       Saved HTTP requests
-docs/build-1-handoff.md      Actual results, submitted SHA, owners/reviewers
-.env.example                Secret-free configuration template
-```
+1. Open the repository and team Project board. Show Build 1 tasks, owners/reviewers, completed PRs, and the submitted SHA from `git rev-parse HEAD`. Check that this commit is visible on GitHub before calling it submitted.
+2. Show the [schema diagram](schema.svg), `database/schema.sql`, and `database/seeds/demo.sql`. The [draw.io source](schema.drawio) is editable through File > Open from > Device at https://app.diagrams.net/. Explain `users.id -> projects.user_id` and `projects.id -> sessions.project_id`: each parent can have many children.
+3. Import `docs/openapi.yaml` into https://editor.swagger.io/. Show the two GET operations, required `sessionId`, object versus array shapes, and populated, empty, and missing examples.
+4. Open http://127.0.0.1:8080/, press F12, and select Network. Click "Load sessions". Inspect `GET /sessions`, status `200`, `Content-Type: application/json; charset=utf-8`, and the displayed list.
+5. Click a session, or enter `ses_101` in "Session ID" and click "Get session". Show the item request, status `200`, and its JSON object on the page.
+6. Run `Get-Content database/queries.sql -Raw | docker compose exec -T db psql -X -U osiris_dev -d osiris_dev -v ON_ERROR_STOP=1`. Compare ID `ses_101` and title `Investigate crash` in SQL, the list, and the item. In `backend/public/index.php`, show routing, `SessionController`, and the PDO queries.
+7. Enter `ses_missing` and submit. Show `404`, `{"error":"Session not found"}`, and the page's error message.
+8. In another terminal run `.\run.ps1 -EmptyDemo -Port 8081`. Open http://127.0.0.1:8081/ and click "Load sessions". Show `200`, `[]`, and "No sessions found." Return to port 8080 and confirm its records remain. The seed was never cleared, so no restoration command is needed.
+9. Import `requests/Osiris.local.postman_collection.json` into Postman and run its four saved GET requests. Run `.\test.ps1` for isolated SQL/HTTP checks. Show the results below and the planned Build 2/3 board tasks. Stop each foreground API with Ctrl+C when finished.
 
-Database files are available under `database/`; the rest of this layout is proposed. Configuration should cover the database connection, API bind address, and CLI API base URL.
+Optional Adminer: run `docker compose up -d adminer`, then open http://127.0.0.1:8083/. Use PostgreSQL, server `db`, username `osiris_dev`, password `osiris_dev_local_only`, and database `osiris_dev` or `osiris_empty_demo`. These are public local-development credentials.
 
-## Relational model
+## Schema and response agreement
 
-```mermaid
-erDiagram
-    USERS ||--o{ PROJECTS : owns
-    PROJECTS ||--o{ SESSIONS : contains
-    USERS {
-        text id PK
-        text username UK
-        text email UK
-    }
-    PROJECTS {
-        text id PK
-        text user_id FK
-        text name
-        text language
-    }
-    SESSIONS {
-        text id PK
-        text project_id FK
-        text title
-        text status
-        timestamptz created_at
-        timestamptz updated_at
-    }
-```
+[`database/schema.sql`](../database/schema.sql) defines `users` to `projects` to `sessions` as one-to-many relationships. Primary keys identify rows; indexed foreign keys preserve relationships. Required text cannot be blank, usernames/emails are unique, session status is constrained, and update timestamps cannot precede creation timestamps. Both demonstration databases use this same three-table schema.
 
-We will use foreign keys and a status constraint such as (`active`, `completed`, `archived`). Index foreign keys. Users represent synthetic ownership in Build 1; authentication and account-specific access are future work. Run the unauthenticated demonstration locally with synthetic data.
+[`database/seeds/demo.sql`](../database/seeds/demo.sql) provides two synthetic users, two projects, and five sessions. The API exposes every session, including both owners' rows. The reported local dataset has six sessions; startup preserves local additions. Five-row expectations apply to a fresh canonical test fixture, not every running database.
 
-Synthetic sessions under two seeded projects, each belonging to a separate demo account:
+| Session | Project | Owner | Title | Status |
+| --- | --- | --- | --- | --- |
+| `ses_103` | `prj_ai` | `usr_demo_one` | Review error messages | archived |
+| `ses_101` | `prj_ai` | `usr_demo_one` | Investigate crash | active |
+| `ses_102` | `prj_ai` | `usr_demo_one` | Add tests | completed |
+| `ses_201` | `prj_web` | `usr_demo_two` | Fix navigation | active |
+| `ses_202` | `prj_web` | `usr_demo_two` | Test contact form | completed |
 
-| ID | Project ID | Title | Status |
-| --- | --- | --- | --- |
-| `ses_101` | `prj_ai` | Investigate renderer crash | active |
-| `ses_102` | `prj_ai` | Add parser tests | completed |
-| `ses_103` | `prj_ai` | Review CLI error messages | archived |
-| `ses_201` | `prj_web` | Fix navigation accessibility | active |
-| `ses_202` | `prj_web` | Test login form layout | completed |
+List order is `created_at`, then `id`, ascending. With the current seed dates it is `ses_103`, `ses_101`, `ses_202`, `ses_102`, `ses_201`; `ses_201` was created at `2026-10-12T09:00:00Z`. Local edits and extra rows can change the displayed list.
 
-## Endpoint map
-
-All operations are **planned** until handlers and database reads have been implemented and checked. Keep the existing unprefixed routes from `docs/openai.yaml`.
-
-| Method | URI | Allocation |
-| --- | --- | --- |
-| GET | `/sessions` | Build 1 |
-| GET | `/sessions/{sessionId}` | Build 1 |
-| POST | `/projects` | Build 2 |
-| GET | `/projects` | Build 2 |
-| GET | `/projects/{projectId}` | Build 2 |
-| PATCH, DELETE | `/projects/{projectId}` | Build 2 |
-| POST | `/sessions` | Build 2 |
-| PATCH, DELETE | `/sessions/{sessionId}` | Build 2 |
-| GET, POST | `/sessions/{sessionId}/messages` | Build 2 |
-| GET, POST | `/sessions/{sessionId}/tasks` | Build 2 |
-| POST | `/users` | Build 3 |
-| GET, PATCH, DELETE | `/users/me` | Build 3 |
-| POST | `/auth/login` | Build 3 |
-| POST | `/auth/logout` | Build 3 |
-
-Example **proposed** item response (`200`, `application/json`):
+`GET /sessions/ses_101` returns this canonical object:
 
 ```json
 {
   "id": "ses_101",
-  "projectId": "prj_elara",
-  "title": "Investigate renderer crash",
+  "projectId": "prj_ai",
+  "title": "Investigate crash",
   "status": "active",
   "createdAt": "2026-10-10T14:00:00Z",
   "updatedAt": "2026-10-14T15:30:00Z"
 }
 ```
 
-The collection response is a plain array of objects with this public shape, matching `docs/openai.yaml`. An empty collection returns `[]` with `200`. An unknown session returns `404`, for example `{"error":{"code":"session_not_found","message":"Session not found."}}`.
+SQL `project_id`, `created_at`, and `updated_at` map to JSON `projectId`, `createdAt`, and `updatedAt`. Timestamps use RFC 3339 UTC with `Z`, omitting fractional seconds when zero. A missing item returns `404`; an empty list returns `200` with `[]`. Known routes reject other methods with `405` and `Allow: GET`. Unknown routes return `404`. There are no deferred-operation stubs.
 
-The OpenAPI document must declare the required `sessionId` path parameter, session schema, item 200/404 responses, and collection 200 response with populated and empty examples. Validate the actual file in an OpenAPI tool and record the tool and outcome. Keep planned operations clearly labeled or in a separate future-design document.
+The standalone [OpenAPI 3.0.3 file](openapi.yaml) defines only `GET /sessions` and `GET /sessions/{sessionId}`, a required path parameter, array/object schemas, and the four case examples.
 
-## Demonstration and evidence
+## Four focused checks
 
-The browser page needs a request-list button, readable list, clickable session IDs or an ID input, and detail/error output. Show the request status and JSON response. Include a readable empty state. Its data must come from HTTP requests, with no embedded seed array.
+`test.ps1` uses Docker and PowerShell. It lints the single PHP file, creates two isolated `osiris_test_<12hex>` databases from the canonical schema, seeds one, and starts temporary API containers on loopback ports. It checks real HTTP responses against SQL-derived expectations. Cleanup runs in `finally`, including after failures; the development and empty-demo databases are not test fixtures. Host PHP and Rust tools are not required.
 
-Record actual results after implementation; these are acceptance criteria, not test results:
+| Case | Expected HTTP result | Actual | SQL agreement |
+| --- | --- | --- | --- |
+| Existing `ses_101` | `200`; exact six-field object above | PASS: `200`; exact object | Every public field and timestamp matches SQL |
+| Missing session | `404`; `{"error":"Session not found"}` | PASS: `404`; exact error object | No matching row |
+| Populated list | `200`; all five canonical rows across owners, in SQL order | PASS: `200`; five objects | All fields, IDs, count, timestamps, and order match SQL |
+| Empty list | `200`; `[]` | PASS: `200`; `[]` | Isolated sessions table has zero rows |
 
-| Check | Expected | Actual |
-| --- | --- | --- |
-| `GET /sessions/ses_101` | 200 JSON object matching its seed row | Not run |
-| `GET /sessions/ses_missing` | 404 with clear error and page feedback | Not run |
-| `GET /sessions` on seeded fixture | 200 with three sessions for demo account one (two for account two) | Not run |
-| `GET /sessions` on empty fixture | 200 with `[]` and page empty state | Not run |
+The isolated test run passed 33 checks, with no failed checks or cleanup errors. Browser checks also confirmed both reads, missing-item feedback, and the empty-state message. The live development database had six sessions; all existing users, projects, and sessions were preserved unchanged. Newman passed four requests and eight assertions. OpenAPI validation passed.
 
-Use a separate test database for the empty fixture. Keep the normal demonstration database intact. Point a separate API instance at the fixture, demonstrate the empty page, then return the demo page to the seeded API and verify all five seed session rows remain. Compare `id` and `title` in SQL output, collection JSON, and item JSON.
+## Delivery manifest
 
-For handoff, capture the exact submitted commit with `git rev-parse HEAD` after committing the implementation. Record setup commands, page URL, endpoint statuses, validation output, four expected/actual checks, repository/board/PR links, and real task owners/reviewers. Do not invent team assignments or completed reviews.
+| Item | Path or value | Owner | Reviewer |
+| --- | --- | --- | --- |
+| PHP scaffold and two reads | `backend/public/index.php`; `backend/Dockerfile`; `backend/composer.json` | Unassigned | Unassigned |
+| Page | `web/index.html` | Unassigned | Unassigned |
+| Schema, seed, read queries | `database/schema.sql`; `database/seeds/demo.sql`; `database/queries.sql`; `docs/schema.drawio`; `docs/schema.svg` | Unassigned | Unassigned |
+| Local setup | `compose.yaml`; `run.ps1`; `scripts/prepare-db.ps1`; `.env.example` | Unassigned | Unassigned |
+| Four-case verification | `test.ps1`; results above | Unassigned | Unassigned |
+| Contract and handoff | `README.md`; `docs/openapi.yaml`; `docs/build-1.md` | Unassigned | Unassigned |
 
-## Named follow-up work
+| Revision record | Value |
+| --- | --- |
+| Base commit | `b99532a02ef60869d5c35745835ec3714b5faaf7` |
+| Build SHA | Run `git rev-parse HEAD` on this checkout and include the printed SHA in the submission. |
+| Submission | Verify that the same SHA is visible on GitHub. Follow the LEA submission instructions; a Git push alone is not a submission record. |
+| Runtime verification time | `2026-10-15T19:00:35Z`; SQL/HTTP checks against isolated fixtures. |
+| Contract/link verification | Swagger CLI validation, local Markdown links, two-GET/four-example checks, and static seed/example agreement passed. Recorded UTC: `2026-10-15T18:53:21Z`. |
+| PR / board links | Unassigned |
+| History | Feature branches were reconstructed from the existing implementation on October 15, 2026. Backdated commit timestamps do not represent the original development chronology. |
 
-| Task | Build | Owner / reviewer |
-| --- | --- | --- |
-| Session/project writes and multi-step CLI workflow | 2 | Unassigned |
-| Message persistence and initial resume workflow | 2 | Unassigned |
-| Filtering, sorting, pagination, query validation, navigation links | 2 | Unassigned |
-| Local model/tool-loop prototype and provider failure handling | 2 | Unassigned |
-| Shared middleware, structured errors, logging, agreed JSON/XML/YAML support | 2 → 3 | Unassigned |
-| Provider integration hardening and external-service failure checks | 3 | Unassigned |
-| Authentication, ownership authorization, credential handling | 3 | Unassigned |
-| Integrity/failure tests and end-to-end CLI resume verification | 3 | Unassigned |
+## Planned backlog
 
-Confirm final build allocation against the teacher-approved exceptions. The full local coding agent is the product roadmap; Build 1 is the first verifiable persistence-service slice.
+All entries below are planned work, absent from the live API and OpenAPI contract. Methods and URIs are planning targets, not callable operations. Owners and reviewers have not been assigned.
+
+| Build | Work | Planned method / URI | Owner / reviewer |
+| --- | --- | --- | --- |
+| 2 | Project CRUD | `GET, POST /projects`; `GET, PATCH, DELETE /projects/{projectId}` | Unassigned / Unassigned |
+| 2 | Session writes | `POST /sessions`; `PATCH, DELETE /sessions/{sessionId}` | Unassigned / Unassigned |
+| 2 | Filters, sorting, pagination | `GET /sessions`; query contract to be defined | Unassigned / Unassigned |
+| 2 | Representations and composition | `GET /sessions/{sessionId}`; `GET /projects/{projectId}/sessions`; representation contract to be defined | Unassigned / Unassigned |
+| 2 | Related messages/tasks and their schema | `GET, POST /sessions/{sessionId}/messages`; `GET, POST /sessions/{sessionId}/tasks` | Unassigned / Unassigned |
+| 3 | Accounts and authentication | `POST /users`; `POST /auth/login`; `POST /auth/logout`; `GET, PATCH, DELETE /users/me` | Unassigned / Unassigned |
+| 3 | Authorization, security, and QA | All planned methods/URIs; ownership rules, credential handling, error and failure tests | Unassigned / Unassigned |
