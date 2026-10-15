@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="osiris-schema" name="Database schema">
+    <mxGraphModel dx="1500" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="0" page="1" pageScale="1" pageWidth="1510" pageHeight="760" math="0" shadow="0" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Osiris database schema" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;fontColor=#1e293b;fontSize=28;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="25" width="1100" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="source" value="PostgreSQL | database/schema.sql" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;fontColor=#1e293b;fontSize=15;fontColor=#64748b;" vertex="1" parent="1">
+          <mxGeometry x="42" y="70" width="1000" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="users" value="users" style="swimlane;html=0;startSize=42;horizontal=1;container=1;collapsible=0;rounded=0;fillColor=#dbeafe;swimlaneFillColor=#ffffff;strokeColor=#1e40af;fontColor=#1e40af;fontFamily=Helvetica;fontSize=20;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="135" width="330" height="237" as="geometry" />
+        </mxCell>
+        <mxCell id="users-id" value="PK  id : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="users">
+          <mxGeometry x="0" y="42" width="330" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="users-username" value="UQ  username : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="users">
+          <mxGeometry x="0" y="78" width="330" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="users-email" value="UQ  email : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="users">
+          <mxGeometry x="0" y="114" width="330" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="users-created_at" value="    created_at : TIMESTAMPTZ" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="users">
+          <mxGeometry x="0" y="150" width="330" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="users-checks" value="CHECK: username and email are nonblank" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;fontColor=#1e293b;fontSize=12;spacingLeft=12;spacingRight=8;fontColor=#475569;" vertex="1" parent="users">
+          <mxGeometry x="0" y="186" width="330" height="51" as="geometry" />
+        </mxCell>
+        <mxCell id="projects" value="projects" style="swimlane;html=0;startSize=42;horizontal=1;container=1;collapsible=0;rounded=0;fillColor=#dcfce7;swimlaneFillColor=#ffffff;strokeColor=#166534;fontColor=#166534;fontFamily=Helvetica;fontSize=20;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="530" y="135" width="360" height="387" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-id" value="PK  id : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="42" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-user_id" value="FK  user_id : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="78" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-name" value="    name : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="114" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-language" value="    language : TEXT  NULL" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="150" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-repository_url" value="    repository_url : TEXT  NULL" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="186" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-created_at" value="    created_at : TIMESTAMPTZ" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="222" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-updated_at" value="    updated_at : TIMESTAMPTZ" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="258" width="360" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="projects-checks" value="CHECK: name is nonblank&#10;CHECK: updated_at &gt;= created_at&#10;INDEX: user_id" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;fontColor=#1e293b;fontSize=12;spacingLeft=12;spacingRight=8;fontColor=#475569;" vertex="1" parent="projects">
+          <mxGeometry x="0" y="294" width="360" height="93" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions" value="sessions" style="swimlane;html=0;startSize=42;horizontal=1;container=1;collapsible=0;rounded=0;fillColor=#fef3c7;swimlaneFillColor=#ffffff;strokeColor=#92400e;fontColor=#92400e;fontFamily=Helvetica;fontSize=20;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="135" width="400" height="372" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-id" value="PK  id : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="42" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-project_id" value="FK  project_id : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;fontStyle=1;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="78" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-title" value="    title : TEXT" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="114" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-status" value="    status : TEXT = 'active'" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="150" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-created_at" value="    created_at : TIMESTAMPTZ" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="186" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-updated_at" value="    updated_at : TIMESTAMPTZ" style="shape=partialRectangle;top=0;left=0;right=0;bottom=1;html=0;fillColor=#ffffff;strokeColor=#e2e8f0;align=left;verticalAlign=middle;spacingLeft=12;fontFamily=Courier New;fontSize=14;fontColor=#0f172a;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="222" width="400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sessions-checks" value="CHECK: title is nonblank&#10;CHECK: status IN ('active', 'completed', 'archived')&#10;CHECK: updated_at &gt;= created_at&#10;INDEX: project_id" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;fontColor=#1e293b;fontSize=12;spacingLeft=12;spacingRight=8;fontColor=#475569;" vertex="1" parent="sessions">
+          <mxGeometry x="0" y="258" width="400" height="114" as="geometry" />
+        </mxCell>
+        <mxCell id="user-projects" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;startArrow=ERmandOne;endArrow=ERzeroToMany;startSize=18;endSize=22;startFill=0;endFill=0;strokeWidth=2;strokeColor=#334155;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="users-id" target="projects-user_id">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="195" />
+              <mxPoint x="450" y="231" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="user-projects-1" value="1" style="edgeLabel;html=0;align=center;verticalAlign=middle;resizable=0;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#334155;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="user-projects">
+          <mxGeometry x="-0.7" y="-16" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="user-projects-0..*" value="0..*" style="edgeLabel;html=0;align=center;verticalAlign=middle;resizable=0;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#334155;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="user-projects">
+          <mxGeometry x="0.7" y="-16" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="project-sessions" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;startArrow=ERmandOne;endArrow=ERzeroToMany;startSize=18;endSize=22;startFill=0;endFill=0;strokeWidth=2;strokeColor=#334155;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="projects-id" target="sessions-project_id">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="970" y="195" />
+              <mxPoint x="970" y="231" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="project-sessions-1" value="1" style="edgeLabel;html=0;align=center;verticalAlign=middle;resizable=0;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#334155;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="project-sessions">
+          <mxGeometry x="-0.7" y="-16" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="project-sessions-0..*" value="0..*" style="edgeLabel;html=0;align=center;verticalAlign=middle;resizable=0;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#334155;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="project-sessions">
+          <mxGeometry x="0.7" y="-16" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend" value="PK = primary key     FK = foreign key     UQ = unique&#10;All columns are NOT NULL unless marked NULL. All timestamps default to CURRENT_TIMESTAMP.&#10;Each project has exactly one user; each session has exactly one project. Parents may have zero or more children.&#10;Foreign keys use NO ACTION on delete: parent rows with children cannot be deleted." style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;fontColor=#1e293b;fontSize=15;spacingLeft=0;" vertex="1" parent="1">
+          <mxGeometry x="42" y="600" width="1400" height="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
