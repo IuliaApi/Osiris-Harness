@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Osiris Build 1</title>
+    <style>
+      body { font: 16px sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+      button, input { font: inherit; margin: 4px 0; }
+      ul { padding-left: 24px; }
+      pre { padding: 12px; border: 1px solid #ccc; white-space: pre-wrap; overflow-wrap: anywhere; }
+      #notice { color: #a00; }
+    </style>
+  </head>
+  <body>
+    <h1>Osiris sessions</h1>
+    <button id="load-sessions" type="button">Load sessions</button>
+    <p id="list-state" role="status"></p>
+    <ul id="sessions"></ul>
+
+    <form id="session-form">
+      <label for="session-id">Session ID</label>
+      <input id="session-id" name="sessionId" value="ses_101" required>
+      <button type="submit">Get session</button>
+    </form>
+    <p id="notice" role="status" aria-live="polite"></p>
+
+    <h2>HTTP response</h2>
+    <p id="request-line" role="status" aria-live="polite">No request yet.</p>
+    <pre id="response" tabindex="0">Click Load sessions or enter a session ID.</pre>
+
+    <script>
+      "use strict";
+      const el = id => document.getElementById(id);
+      let busy = false;
+
+      async function request(path) {
+        if (busy) return;
+        busy = true;
+        el("notice").textContent = "";
+        document.querySelectorAll("button, input").forEach(control => control.disabled = true);
+        try {
+          const response = await fetch(path, { headers: { Accept: "application/json" } });
+          const value = await response.json();
+          el("request-line").textContent = `GET ${path} - HTTP ${response.status}`;
+          el("response").textContent = JSON.stringify(value, null, 2);
+          if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+          if (Array.isArray(value)) {
+            el("sessions").replaceChildren();
+            el("list-state").textContent = value.length ? `${value.length} sessions.` : "No sessions found.";
+            for (const session of value) {
+              const item = document.createElement("li");
+              const button = document.createElement("button");
+              button.type = "button";
+              button.textContent = `${session.title} (${session.id})`;
+              button.onclick = () => {
+                el("session-id").value = session.id;
+                request(`/sessions/${encodeURIComponent(session.id)}`);
+              };
+              item.append(button);
+              el("sessions").append(item);
+            }
+          }
+        } catch (error) {
+          el("notice").textContent = error.message;
+        } finally {
+          busy = false;
+          document.querySelectorAll("button, input").forEach(control => control.disabled = false);
+        }
+      }
+
+      el("load-sessions").onclick = () => request("/sessions");
+      el("session-form").onsubmit = event => {
+        event.preventDefault();
+        request(`/sessions/${encodeURIComponent(el("session-id").value)}`);
+      };
+    </script>
+  </body>
+</html>
