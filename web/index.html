@@ -1,79 +1,307 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Osiris Build 1</title>
-    <style>
-      body { font: 16px sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
-      button, input { font: inherit; margin: 4px 0; }
-      ul { padding-left: 24px; }
-      pre { padding: 12px; border: 1px solid #ccc; white-space: pre-wrap; overflow-wrap: anywhere; }
-      #notice { color: #a00; }
-    </style>
-  </head>
-  <body>
-    <h1>Osiris sessions</h1>
-    <button id="load-sessions" type="button">Load sessions</button>
-    <p id="list-state" role="status"></p>
-    <ul id="sessions"></ul>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Osiris — workspace</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root { color-scheme:dark; --background:#101114; --surface:#17181b; --elevated:#1c1d21; --stroke:#303137; --stroke-light:#26272d; --text:#eeedf0; --muted:#9999a3; --accent:#5798f7; --accent-soft:#1a2b45; --danger:#ff9696; }
+    *,*::before,*::after{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{font:14px/1.5 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--background);color:var(--text);letter-spacing:-.01em}
+    .hidden{display:none!important}
+    button,input,select,textarea{font:inherit}
+    button{cursor:pointer}
+    .app{min-height:100vh;display:grid;grid-template-columns:220px minmax(0,1fr)}
+    .sidebar{border-right:1px solid var(--stroke-light);padding:26px 13px;display:flex;flex-direction:column;gap:30px;background:#131417;position:sticky;top:0;height:100vh}
+    .brand{font-size:17px;font-weight:700;letter-spacing:-.05em;padding:0 14px;color:var(--text)}
+    .small-title{color:#797a84;font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin:0 14px 10px}
+    .nav-column{display:grid;gap:4px}
+    .nav-link-os{width:100%;border:0;text-align:left;border-radius:7px;padding:10px 13px;background:none;color:#a1a1ab;font-size:13px;font-weight:500;transition:background .15s}
+    .nav-link-os:hover,.nav-link-os.active{background:#25252c;color:var(--text)}
+    .sidebar-bottom{margin-top:auto;padding:15px 9px 0;border-top:1px solid var(--stroke-light)}
+    .userline{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .avatar{height:30px;width:30px;background:#1d3049;border-radius:7px;display:grid;place-items:center;color:#8ebeff;font-weight:700}
+    .userline span{font-size:12px;color:var(--text);overflow-wrap:anywhere}
+    .subtle-link{border:0;background:none;color:var(--muted);padding:3px 0;font-size:12px;text-decoration:none}
+    .subtle-link:hover{color:var(--text)}
+    .main{min-width:0}
+    .topbar{height:70px;border-bottom:1px solid var(--stroke-light);display:flex;align-items:center;justify-content:space-between;padding:0 44px;gap:12px}
+    .breadcrumb-os{color:var(--muted);font-size:13px}
+    .breadcrumb-os strong{color:var(--text);font-weight:550}
+    .top-end{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:12px}
+    .status-dot{display:inline-block;vertical-align:middle;width:7px;height:7px;background:#73ba95;border-radius:50%;margin-right:7px}
+    .status-dot.off{background:#f3a56d}
+    .page{max-width:1120px;margin:0 auto;padding:44px 44px 80px}
+    .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:34px}
+    .page-title{font-size:26px;line-height:1.25;letter-spacing:-.055em;font-weight:620;margin:0 0 6px}
+    .page-sub{font-size:13px;color:var(--muted);margin:0}
+    .eyebrow{font-size:11px;font-weight:650;letter-spacing:.10em;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+    .btn-os{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:1px solid var(--stroke);border-radius:7px;background:#24252b;color:var(--text);padding:8px 13px;font-size:12px;font-weight:580;min-height:35px}
+    .btn-os:hover{background:#2d2e34;color:var(--text)}
+    .btn-os.primary{background:#4e91ea;color:#ffffff;border-color:#4e91ea}
+    .btn-os.primary:hover{background:#367ad8;border-color:#367ad8}
+    .btn-os.danger{color:var(--danger)}
+    .btn-os:disabled{opacity:.5;cursor:default}
+    .input-os{width:100%;border:1px solid var(--stroke);border-radius:7px;background:#1b1c20;color:var(--text);outline:none;padding:10px 12px;min-height:39px}
+    .input-os:focus{border-color:#5798f7;box-shadow:0 0 0 2px rgba(87,152,247,.16)}
+    .input-os::placeholder{color:#73747d}
+    .label-os{display:block;margin-bottom:7px;color:#bbb9c2;font-size:12px;font-weight:550}
+    .panel{background:var(--surface);border:1px solid var(--stroke-light);border-radius:10px;overflow:hidden}
+    .panel-head{padding:18px 20px;border-bottom:1px solid var(--stroke-light);display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .panel-head h2{font-size:13px;font-weight:620;margin:0}
+    .panel-head small{font-size:12px;color:var(--muted)}
+    .panel-body{padding:20px}
+    .metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}
+    .metric{padding:21px 23px;background:var(--surface);border:1px solid var(--stroke-light);border-radius:9px}
+    .metric label{font-size:11px;color:var(--muted);display:block;margin-bottom:12px}
+    .metric strong{font-size:29px;letter-spacing:-.05em;font-weight:600}
+    .dashboard-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr);gap:18px}
+    .item-row{width:100%;border:none;border-bottom:1px solid var(--stroke-light);background:transparent;color:inherit;padding:15px 19px;display:flex;justify-content:space-between;align-items:center;gap:16px;text-align:left}
+    .item-row:last-child{border-bottom:0}
+    .item-row:hover{background:#1e1f24}
+    .item-title{font-size:13px;font-weight:580;white-space:normal;word-break:break-word}
+    .item-meta{font-size:11px;color:var(--muted);margin-top:3px}
+    .badge-os{display:inline-block;border:1px solid #3b3a41;color:#a5a3ad;font-size:10px;text-transform:capitalize;font-weight:550;padding:3px 8px;border-radius:5px;white-space:nowrap}
+    .badge-os.active{border-color:#304c42;color:#80c9a4;background:#1b2925}
+    .empty{padding:42px 22px;color:var(--muted);font-size:13px;text-align:center}
+    .filter-bar{display:grid;grid-template-columns:minmax(140px,1fr) 155px 175px auto;gap:10px;margin-bottom:16px}
+    .session-item{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(110px,1fr) 100px 125px;gap:13px;align-items:center;border-bottom:1px solid var(--stroke-light);padding:16px 19px}
+    .session-item:last-child{border-bottom:0}
+    .session-item.head{padding:12px 19px;font-size:11px;color:var(--muted);font-weight:620;background:#1a1b1f}
+    .session-item .btn-os{justify-self:end}
+    .session-item > *{min-width:0}
+    .truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pagination-os{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 20px;border-top:1px solid var(--stroke-light);color:var(--muted);font-size:12px}
+    .pagination-os > div{display:flex;gap:8px}
+    .chat-layout{display:grid;grid-template-columns:230px minmax(0,1fr);min-height:calc(100vh - 250px);height:min(760px,calc(100vh - 205px));border:1px solid var(--stroke-light);border-radius:10px;overflow:hidden;background:var(--surface)}
+    .chat-sidebar{border-right:1px solid var(--stroke-light);overflow-y:auto;background:#16171b}
+    .chat-side-head{padding:16px;border-bottom:1px solid var(--stroke-light);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:620}
+    .chat-session{width:100%;text-align:left;display:block;border:0;background:none;color:#a3a1ad;padding:11px 16px;border-bottom:1px solid #222329;font-size:12px}
+    .chat-session strong{display:block;color:#d8d7df;font-weight:560;font-size:12px;margin-bottom:3px}
+    .chat-session small{display:block;color:#85848f}
+    .chat-session:hover{background:#202127}
+    .chat-session.selected{background:var(--accent-soft);box-shadow:inset 2px 0 var(--accent)}
+    .chat-main{min-width:0;min-height:0;display:flex;flex-direction:column}
+    .chat-header{padding:14px 19px;border-bottom:1px solid var(--stroke-light);display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .chat-heading{font-size:13px;font-weight:620;margin:0}
+    .chat-header small{font-size:11px;color:var(--muted)}
+    .chat-history{flex:1;overflow:auto;padding:22px 24px;scroll-behavior:smooth}
+    .message{margin-bottom:22px;max-width:810px}
+    .message-label{font-size:10px;letter-spacing:.055em;color:#aab6c8;font-weight:700;text-transform:uppercase;margin-bottom:7px}
+    .message.user .message-label{color:#8dbfff}
+    .message-text{font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;color:#e0dfe7}
+    .message.error .message-text{color:#ffb0b0}
+    .chat-composer{padding:16px 22px;border-top:1px solid var(--stroke-light)}
+    .chat-composer textarea{resize:vertical;min-height:68px;max-height:190px}
+    .composer-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px}
+    .hint{color:var(--muted);font-size:11px}
+    .login-screen{min-height:100vh;display:grid;place-items:center;padding:24px}
+    .login-card{width:min(410px,100%);padding:34px 31px;background:var(--surface);border:1px solid var(--stroke);border-radius:12px}
+    .login-word{font-size:17px;font-weight:700;letter-spacing:-.045em;margin-bottom:36px}
+    .login-card h1{font-size:23px;font-weight:630;letter-spacing:-.055em;margin:0 0 8px}
+    .login-card p{color:var(--muted);font-size:13px;margin:0 0 25px}
+    .login-note{border-top:1px solid var(--stroke-light);font-size:11px;color:var(--muted);padding-top:18px;margin-top:20px;line-height:1.55}
+    .notice{border:1px solid #564b36;color:#e0ca99;background:#2a251e;border-radius:7px;padding:10px 13px;font-size:12px;margin-bottom:18px}
+    .toast-os{position:fixed;bottom:20px;right:20px;max-width:min(400px,calc(100vw - 40px));background:#26272e;border:1px solid var(--stroke);color:var(--text);padding:13px 18px;border-radius:8px;z-index:3000;box-shadow:0 10px 34px #0005;font-size:13px}
+    .modal-content{background:#1a1b20;border:1px solid var(--stroke);border-radius:11px;color:var(--text)}
+    .modal.fallback-open{display:block!important;background:#000a;overflow-y:auto}.modal.fallback-open .modal-dialog{margin:10vh auto;max-width:min(480px,calc(100vw - 32px))}.modal.fallback-open .modal-content{padding:18px}.modal.fallback-open .modal-header,.modal.fallback-open .modal-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0}.modal.fallback-open .modal-body{padding:12px 0}.modal.fallback-open .btn-close{background:none;border:0;color:var(--text)}.modal.fallback-open .btn-close:after{content:"Close"}
+    .modal-header,.modal-footer{border-color:var(--stroke-light)}
+    .modal-title{font-size:17px}
+    @media(max-width:1000px){.page{padding:32px 25px}.topbar{padding:0 25px}.dashboard-grid{grid-template-columns:1fr}.chat-layout{grid-template-columns:200px minmax(0,1fr)}}
+    @media(max-width:700px){.app{grid-template-columns:1fr}.sidebar{position:static;height:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:13px 16px;gap:10px;border-right:0;border-bottom:1px solid var(--stroke-light)}.small-title,.sidebar-bottom{display:none}.brand{padding:0}.nav-column{display:flex;gap:3px}.nav-link-os{padding:8px;font-size:12px}.topbar{height:55px;padding:0 18px}.page{padding:24px 16px 70px}.page-title{font-size:23px}.page-head{margin-bottom:23px}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.metric{padding:13px}.metric strong{font-size:23px}.filter-bar{grid-template-columns:1fr 1fr}.filter-bar input{grid-column:1/-1}.session-item{grid-template-columns:minmax(0,1fr) 76px}.session-item > :nth-child(2),.session-item.head{display:none}.session-item .badge-os{display:none}.chat-layout{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:calc(100dvh - 235px);min-height:480px}.chat-sidebar{display:flex;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--stroke-light);max-height:73px}.chat-side-head{flex-shrink:0}.chat-session{min-width:120px;border-right:1px solid var(--stroke-light);border-bottom:0;padding:10px}.chat-session small{display:none}.chat-history{padding:17px}.chat-composer{padding:12px}.top-end{font-size:11px}.page-head .btn-os{flex-shrink:0}}
 
-    <form id="session-form">
-      <label for="session-id">Session ID</label>
-      <input id="session-id" name="sessionId" value="ses_101" required>
-      <button type="submit">Get session</button>
-    </form>
-    <p id="notice" role="status" aria-live="polite"></p>
+    .demo-intro{border:1px solid #284361;background:#162237;padding:15px 18px;border-radius:9px;color:#b9d8ff;font-size:12px;line-height:1.7;margin-bottom:23px}
+    .demo-controls{display:flex;gap:9px;align-items:end;flex-wrap:wrap;margin:14px 0}
+    .demo-controls label{font-size:11px;color:var(--muted);display:grid;gap:5px;min-width:120px;flex:1}
+    .demo-controls select,.demo-controls input{max-width:350px}
+    .demo-step{margin-bottom:15px}
+    .demo-step .panel-head{align-items:flex-start}
+    .demo-step .panel-head h2{font-size:14px;margin:0 0 5px}
+    .demo-step .panel-body{padding:15px 19px}
+    .demo-step p{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.65}
+    .demo-output{background:#101319;border:1px solid #2b3645;border-radius:6px;max-height:300px;overflow:auto;padding:13px;font:11px/1.6 Consolas,monospace;color:#c9d8e8;white-space:pre-wrap;word-break:break-word;margin-top:12px}
+    .demo-state{font-size:11px;color:var(--muted);padding:4px 0}
+    .demo-state.pass{color:#80c9a4}.demo-state.fail{color:#ff9696}
+    .demo-status-list{margin:0;padding:0;list-style:none}
+    .demo-status-list li{border-bottom:1px solid var(--stroke-light);padding:12px 18px;display:flex;justify-content:space-between;gap:14px;font-size:12px;align-items:start}
+    .demo-status-list li:last-child{border-bottom:0}
+    .demo-status-list small{display:block;font-size:11px;color:var(--muted);margin-top:5px}
+    .demo-status-list .badge-os{white-space:normal;text-align:center;min-width:92px}
+    @media(max-width:700px){.demo-controls{display:grid;grid-template-columns:1fr 1fr}.demo-controls label{min-width:0}.demo-controls .btn-os{width:100%}.demo-status-list li{display:block}.demo-status-list .badge-os{display:inline-block;margin-top:7px}}
+  </style>
+</head>
+<body>
+<div id="login-screen" class="login-screen hidden">
+  <form id="login-form" class="login-card">
+    <div class="login-word">osiris</div>
+    <h1>Enter your workspace</h1>
+    <p>One simple place for your coding sessions and AI conversations.</p>
+    <label class="label-os" for="login-name">Display name</label>
+    <input id="login-name" class="input-os" type="text" autocomplete="nickname" minlength="2" maxlength="40" placeholder="Your name" required>
+    <button class="btn-os primary w-100 mt-3" type="submit">Continue to dashboard</button>
+    <div class="login-note">Local demo access for Build 2. This is not authenticated ChatGPT account login or a security boundary. Account authentication is planned for Build 3.</div>
+  </form>
+</div>
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand">osiris</div>
+    <div class="nav-column" aria-label="Main navigation"><div class="small-title">Workspace</div>
+      <button type="button" class="nav-link-os" data-route="/dashboard">Dashboard</button>
+      <button type="button" class="nav-link-os" data-route="/workspace">Sessions</button>
+      <button type="button" class="nav-link-os" data-route="/chat">Chat</button>
+      <button type="button" class="nav-link-os" data-route="/build-2">Build 2 Dashboard</button>
+    </div>
+    <div class="sidebar-bottom"><div class="userline"><span class="avatar" id="avatar">U</span><span id="username">Local user</span></div><button class="subtle-link" id="logout">Log out</button></div>
+  </aside>
+  <div class="main">
+    <header class="topbar"><div class="breadcrumb-os">Workspace / <strong id="page-label">Dashboard</strong></div><div class="top-end"><span><span class="status-dot off" id="api-dot"></span><span id="api-state">Checking connection</span></span></div></header>
+    <div class="page">
+      <section id="dashboard-view" class="hidden">
+        <div class="page-head"><div><div class="eyebrow">Overview</div><h1 class="page-title" id="greeting">Dashboard</h1><p class="page-sub">Your sessions and projects, all in one place.</p></div><div class="d-flex flex-wrap gap-2"><a class="btn-os" href="http://127.0.0.1:8083/" target="_blank" rel="noopener noreferrer">Open database ↗</a><button class="btn-os primary" data-action="new-session">New session</button></div></div>
+        <div class="metric-grid"><div class="metric"><label>Projects</label><strong id="count-projects">—</strong></div><div class="metric"><label>Sessions</label><strong id="count-sessions">—</strong></div><div class="metric"><label>Active sessions</label><strong id="count-active">—</strong></div></div>
+        <div class="dashboard-grid">
+          <div class="panel"><div class="panel-head"><h2>Recent sessions</h2><button class="subtle-link" data-route="/workspace">View all</button></div><div id="recent-sessions" class="empty">Loading sessions…</div></div>
+          <div class="panel"><div class="panel-head"><h2>Projects</h2><button class="subtle-link" data-action="new-project">New project</button></div><div id="dashboard-projects" class="empty">Loading projects…</div></div>
+        </div>
+        <p class="hint mt-4">Data is loaded from PostgreSQL. Chat responses require an OpenAI API key configured on the server.</p>
+      </section>
+      <section id="sessions-view" class="hidden">
+        <div class="page-head"><div><div class="eyebrow">Workspace</div><h1 class="page-title">Sessions</h1><p class="page-sub">Search and resume a saved conversation.</p></div><button class="btn-os primary" data-action="new-session">New session</button></div>
+        <form id="filter-form" class="filter-bar"><input class="input-os" name="q" id="filter-q" aria-label="Search session title" placeholder="Search sessions..."><select class="input-os" name="status" id="filter-status" aria-label="Status"><option value="">All statuses</option><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option></select><select class="input-os" name="sort" id="filter-sort" aria-label="Sort"><option value="updatedAt">Last updated</option><option value="createdAt">Date created</option><option value="title">Title</option></select><button class="btn-os" type="submit">Apply</button></form>
+        <div class="panel"><div class="session-item head"><span>Session</span><span>Project</span><span>Status</span><span></span></div><div id="session-results" class="empty">Loading sessions…</div><div class="pagination-os"><span id="page-info">—</span><div><button id="previous-page" class="btn-os" type="button">Previous</button><button id="next-page" class="btn-os" type="button">Next</button></div></div></div>
+      </section>
+      <section id="chat-view" class="hidden">
+        <div class="page-head"><div><div class="eyebrow">Conversations</div><h1 class="page-title">Chat</h1><p class="page-sub">Select a session and continue where you left off.</p></div><button class="btn-os" data-action="new-session">New session</button></div>
+        <div class="chat-layout"><aside class="chat-sidebar"><div class="chat-side-head"><span>Sessions</span><button class="subtle-link" id="refresh-sessions" title="Refresh sessions">Refresh</button></div><div id="chat-session-list"></div></aside>
+          <div class="chat-main"><div class="chat-header"><div><h2 class="chat-heading" id="chat-title">Select a session</h2><small id="chat-project">Choose an existing session to start chatting</small></div><div class="d-flex align-items-center gap-2"><span class="badge-os" id="chat-status">—</span><button class="subtle-link hidden" id="archive-session">Archive</button></div></div>
+            <div class="chat-history" id="chat-history"><div class="empty">Select a session on the left to see your messages.</div></div>
+            <form id="chat-form" class="chat-composer"><label class="label-os" for="message-text">Message</label><textarea class="input-os" id="message-text" placeholder="Ask Osiris about your code..." maxlength="6000" required disabled></textarea><div class="composer-footer"><span class="hint" id="chat-hint">Choose an active session to send a message.</span><button class="btn-os primary" type="submit" id="send-message" disabled>Send message</button></div></form>
+          </div></div>
+      </section>
 
-    <h2>HTTP response</h2>
-    <p id="request-line" role="status" aria-live="polite">No request yet.</p>
-    <pre id="response" tabindex="0">Click Load sessions or enter a session ID.</pre>
+      <section id="build2-view" class="hidden">
+        <div class="page-head"><div><div class="eyebrow">Implementation evidence</div><h1 class="page-title">Build 2 Dashboard</h1><p class="page-sub">Run live API demonstrations against your database.</p></div><div class="d-flex flex-wrap gap-2"><a class="btn-os" href="http://127.0.0.1:8083/" target="_blank" rel="noopener noreferrer">Open database ↗</a><button class="btn-os" id="demo-refresh" type="button">Refresh data</button></div></div>
+        <div class="demo-intro">Database viewer: <a href="http://127.0.0.1:8083/" target="_blank" rel="noopener noreferrer">Adminer ↗</a> (PostgreSQL). Log in with System <code>PostgreSQL</code>, Server <code>db</code>, Username <code>osiris_dev</code>, Password <code>osiris_dev_local_only</code>, Database <code>osiris_dev</code>. Local development only; requires <code>.\run.ps1</code> to be running.</div>
+        <div class="demo-intro">Every Run button makes a real request against this Osiris PHP/PostgreSQL application. HTTP status, request ID and response are displayed below. A successful request is evidence from this running instance; source-code coverage alone is not proof of a passing integration test. Demo login is not actual authentication.</div>
+        <div class="panel demo-step"><div class="panel-head"><div><h2>1. Build 1 GET regression</h2><small>Original session collection + individual session, including 404 for missing item.</small></div><span id="demo-state-1" class="demo-state">Not run</span></div><div class="panel-body"><div class="demo-controls"><button class="btn-os primary" type="button" data-demo="1">Run original GETs</button></div><div id="demo-output-1" class="demo-output hidden" aria-live="polite"></div></div></div>
+        <div class="panel demo-step"><div class="panel-head"><div><h2>2. Collection controls</h2><small>Filtering, bounded pagination, stable sorting, next link preserving parameters.</small></div><span id="demo-state-2" class="demo-state">Not run</span></div><div class="panel-body"><div class="demo-controls"><label>Status<select class="input-os" id="demo-filter"><option value="">All statuses</option><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option></select></label><label>Sort<select class="input-os" id="demo-sort"><option value="title">Title</option><option value="updatedAt">Updated</option><option value="createdAt">Created</option></select></label><label>Page size<select class="input-os" id="demo-limit"><option value="1">1</option><option value="2">2</option><option value="5">5</option></select></label><button type="button" class="btn-os primary" data-demo="2">Apply filter + sort</button><button type="button" class="btn-os" id="demo-next" disabled>Next page →</button></div><div id="demo-output-2" class="demo-output hidden" aria-live="polite"></div></div></div>
+        <div class="panel demo-step"><div class="panel-head"><div><h2>3. Persisted create and update</h2><small>POST a session, PATCH its title, then GET the stored result from PostgreSQL.</small></div><span id="demo-state-3" class="demo-state">Not run</span></div><div class="panel-body"><p>Creates a real demo session in the first existing project. It remains in the database so it can be shown in Sessions.</p><div class="demo-controls"><label>New session title<input class="input-os" id="demo-title" maxlength="130" value="Build 2 classroom demo"></label><button type="button" class="btn-os primary" data-demo="3">Create → update → read</button></div><div id="demo-output-3" class="demo-output hidden" aria-live="polite"></div></div></div>
+        <div class="panel demo-step"><div class="panel-head"><div><h2>4. Representations and validation</h2><small>JSON, XML, YAML via Accept; structured 400 or 406 response.</small></div><span id="demo-state-4" class="demo-state">Not run</span></div><div class="panel-body"><div class="demo-controls"><button type="button" class="btn-os primary" data-demo="4">Compare 3 formats + invalid request</button></div><div id="demo-output-4" class="demo-output hidden" aria-live="polite"></div></div></div>
+        <div class="panel demo-step"><div class="panel-head"><div><h2>5. Composite with an external service</h2><small>PostgreSQL session, project, messages and tasks + public GitHub REST metadata. Graceful fallback.</small></div><span id="demo-state-5" class="demo-state">Not run</span></div><div class="panel-body"><p>Normal request uses a project's public GitHub URL. “Simulate outage” exercises the same composite resource with a deterministic upstream failure; local DB information still returns with HTTP 200.</p><div class="demo-controls"><button type="button" class="btn-os primary" data-demo="5">Get composite</button><button type="button" class="btn-os" id="demo-outage">Simulate upstream outage</button></div><div id="demo-output-5" class="demo-output hidden" aria-live="polite"></div></div></div>
+        <div class="panel demo-step"><div class="panel-head"><div><h2>6. Regression checks</h2><small>Run live HTTP smoke requests here; run the full PowerShell suite separately.</small></div><span id="demo-state-6" class="demo-state">Not run</span></div><div class="panel-body"><div class="demo-controls"><button type="button" class="btn-os primary" data-demo="6">Run HTTP smoke checks</button></div><p class="mt-2">Full database/regression suite: <code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\test.ps1</code> from the project folder. Browser checks do not replace this suite.</p><div id="demo-output-6" class="demo-output hidden" aria-live="polite"></div></div></div>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast-os hidden" role="alert"></div>
+<div class="modal fade" id="session-modal" tabindex="-1" aria-labelledby="session-modal-title" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="session-form"><div class="modal-header"><h2 class="modal-title" id="session-modal-title">New session</h2><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><div class="mb-3"><label class="label-os" for="session-title">Session title</label><input class="input-os" id="session-title" maxlength="160" placeholder="Debug login issue" required></div><div><label class="label-os" for="session-project">Project</label><select class="input-os" id="session-project" required></select></div><div class="hint mt-3">No projects? Create one from the dashboard first.</div></div><div class="modal-footer"><button type="button" class="btn-os" data-bs-dismiss="modal">Cancel</button><button class="btn-os primary" type="submit">Create & open</button></div></form></div></div></div>
+<div class="modal fade" id="project-modal" tabindex="-1" aria-labelledby="project-modal-title" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="project-form"><div class="modal-header"><h2 class="modal-title" id="project-modal-title">New project</h2><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><div class="mb-3"><label class="label-os" for="project-name">Project name</label><input class="input-os" id="project-name" maxlength="160" required placeholder="My workspace"></div><div class="mb-3"><label class="label-os" for="project-language">Language (optional)</label><input class="input-os" id="project-language" maxlength="80" placeholder="TypeScript"></div><div><label class="label-os" for="project-url">Public GitHub URL (optional)</label><input class="input-os" type="url" id="project-url" placeholder="https://github.com/owner/repo"></div></div><div class="modal-footer"><button type="button" class="btn-os" data-bs-dismiss="modal">Cancel</button><button class="btn-os primary" type="submit">Create project</button></div></form></div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), appState={name:sessionStorage.getItem('osiris-demo-user')||'',route:'',projects:[],sessions:[],current:sessionStorage.getItem('osiris-session')||'',detail:null,links:{},page:null,sending:false};
+function el(tag,cls,content){const e=document.createElement(tag);if(cls)e.className=cls;if(content!==undefined)e.textContent=String(content);return e;}
+function empty(target,message){const n=$(target);n.replaceChildren(el('div','empty',message));}
+function notify(message){const t=$('toast');t.textContent=message;t.classList.remove('hidden');clearTimeout(notify.timer);notify.timer=setTimeout(()=>t.classList.add('hidden'),6500);}
+async function request(method,path,payload){const init={method,headers:{Accept:'application/json'}};if(payload!==undefined){init.headers['Content-Type']='application/json';init.body=JSON.stringify(payload);}let r;try{r=await fetch(path,init);}catch{throw Error('Server unavailable. Start the Docker application and refresh.');}let data=null;try{data=await r.json();}catch{}if(!r.ok)throw Error((data&&data.error)||`HTTP ${r.status}`);return data;}
+function projectName(id){return appState.projects.find(p=>p.id===id)?.name||id||'Unassigned';}
+function getPath(){return ['/login','/dashboard','/workspace','/chat','/build-2'].includes(location.pathname)?location.pathname:'/dashboard';}
+function go(path,replace=false){if(!appState.name)path='/login';if(replace)history.replaceState({},'',path);else if(location.pathname!==path)history.pushState({},'',path);appState.route=path;renderRoute();}
+async function renderRoute(){const logged=Boolean(appState.name),path=logged?(getPath()==='/login'?'/dashboard':getPath()):'/login';$('login-screen').classList.toggle('hidden',logged);$('app').classList.toggle('hidden',!logged);if(!logged){if(location.pathname!=='/login')history.replaceState({},'','/login');return;}if(path!==location.pathname)history.replaceState({},'',path);appState.route=path;
+  $('username').textContent=appState.name;$('avatar').textContent=appState.name[0]?.toUpperCase()||'U';$('greeting').textContent=`Welcome back, ${appState.name}`;
+  const views={'/dashboard':'dashboard','/workspace':'sessions','/chat':'chat','/build-2':'build2'};for(const [p,n] of Object.entries(views))$(n+'-view').classList.toggle('hidden',p!==path);
+  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===path));$('page-label').textContent=views[path]==='sessions'?'Sessions':views[path]==='chat'?'Chat':views[path]==='build2'?'Build 2 Dashboard':'Dashboard';
+  try{await refreshData();if(path==='/dashboard')renderDashboard();if(path==='/workspace')await loadSessions();if(path==='/chat'){renderChatSessions();await loadChat();}if(path==='/build-2')await demoRefresh();}catch(e){notify(e.message);}
+}
+async function refreshData(){const [projects,sessions]=await Promise.all([request('GET','/projects?limit=100&sort=name&order=asc'),request('GET','/sessions?limit=100&sort=updatedAt&order=desc')]);appState.projects=projects.items||[];appState.sessions=sessions.items||[];
+  try{const r=await request('GET','/api/runtime');const configured=Boolean(r.ai?.providers?.find(p=>p.id==='openai')?.configured);$('api-state').textContent=configured?'OpenAI configured':'Chat not configured';$('api-dot').classList.toggle('off',!configured);}catch{$('api-state').textContent='API unavailable';$('api-dot').classList.add('off');}
+}
+function row(title,subtitle,status,onClick){const b=el('button','item-row');b.type='button';const l=el('span');l.append(el('div','item-title',title),el('div','item-meta',subtitle||''));b.append(l);if(status)b.append(el('span','badge-os '+status,status));b.addEventListener('click',onClick);return b;}
+function renderDashboard(){const s=appState.sessions,p=appState.projects;$('count-projects').textContent=p.length;$('count-sessions').textContent=s.length;$('count-active').textContent=s.filter(x=>x.status==='active').length;
+  const r=$('recent-sessions');r.replaceChildren();if(!s.length)empty('recent-sessions','No sessions yet. Create your first session.');else for(const x of s.slice(0,7))r.append(row(x.title,`${projectName(x.projectId)} · ${new Date(x.updatedAt||x.createdAt).toLocaleDateString()}`,x.status,()=>openChat(x.id)));
+  const pr=$('dashboard-projects');pr.replaceChildren();if(!p.length)empty('dashboard-projects','No projects yet. Create a project to begin.');else for(const x of p.slice(0,7))pr.append(row(x.name,x.language||'Project',null,()=>{go('/workspace');$('filter-q').value='';}));
+}
+function listUrl(offset=0){const q=new URLSearchParams({limit:'10',offset:String(offset),sort:$('filter-sort').value,order:'desc'});if($('filter-q').value.trim())q.set('q',$('filter-q').value.trim());if($('filter-status').value)q.set('status',$('filter-status').value);return '/sessions?'+q;}
+async function loadSessions(url){const data=await request('GET',url||listUrl());appState.links=data.links||{};appState.page=data.page||{};const rows=$('session-results');rows.replaceChildren();if(!data.items?.length)empty('session-results','No sessions match your filters.');else for(const s of data.items){const r=el('div','session-item');r.append(el('div','item-title truncate',s.title),el('div','item-meta truncate',projectName(s.projectId)),el('span','badge-os '+s.status,s.status));const b=el('button','btn-os','Open');b.type='button';b.addEventListener('click',()=>openChat(s.id));r.append(b);rows.append(r);}
+  const p=appState.page;$('page-info').textContent=`${p.total||0} sessions · ${p.total ? p.offset+1 : 0}–${Math.min((p.offset||0)+(data.items?.length||0),p.total||0)}`;$('previous-page').disabled=!appState.links.previous;$('next-page').disabled=!appState.links.next;
+}
+function renderChatSessions(){const root=$('chat-session-list');root.replaceChildren();if(!appState.sessions.length){root.append(el('div','empty','No sessions yet.'));return;}for(const s of appState.sessions){const b=el('button','chat-session'+(appState.current===s.id?' selected':''));b.type='button';b.append(el('strong','truncate',s.title),el('small','truncate',projectName(s.projectId)));b.onclick=()=>selectSession(s.id);root.append(b);}}
+async function openChat(id){appState.current=id;sessionStorage.setItem('osiris-session',id);go('/chat');}
+async function selectSession(id){appState.current=id;sessionStorage.setItem('osiris-session',id);renderChatSessions();await loadChat();}
+function messageNode(m){const block=el('article','message '+(m.role==='user'?'user':'assistant'));block.append(el('div','message-label',m.role==='user'?'You':m.role==='assistant'?'Osiris':m.role));block.append(el('div','message-text',m.content));return block;}
+async function loadChat(){const box=$('chat-history');if(!appState.current){appState.detail=null;$('chat-title').textContent='Select a session';$('chat-project').textContent='Choose an existing session to start chatting';$('chat-status').textContent='—';$('archive-session').classList.add('hidden');$('message-text').disabled=true;$('send-message').disabled=true;empty('chat-history','Choose a session to open its conversation.');return;}
+  try{const d=await request('GET',`/sessions/${encodeURIComponent(appState.current)}?include=project,messages,tasks`);appState.detail=d;$('chat-title').textContent=d.title;$('chat-project').textContent=d.project?.name||projectName(d.projectId);$('chat-status').textContent=d.status;$('chat-status').className='badge-os '+d.status;$('archive-session').classList.toggle('hidden',d.status!=='active');$('message-text').disabled=d.status!=='active'||appState.sending;$('send-message').disabled=d.status!=='active'||appState.sending;$('chat-hint').textContent=d.status==='active'?'Enter to send · Shift+Enter for a new line':'This session is read-only. Start a new one to chat.';
+    box.replaceChildren();if(!d.messages?.length)empty('chat-history','No messages yet. Write the first message below.');else for(const m of d.messages)box.append(messageNode(m));box.scrollTop=box.scrollHeight;renderChatSessions();
+  }catch(e){appState.current='';sessionStorage.removeItem('osiris-session');empty('chat-history',e.message);notify(e.message);}
+}
+async function sendChat(event){event.preventDefault();if(!appState.current||appState.sending)return;const box=$('message-text'),text=box.value.trim();if(!text)return;appState.sending=true;box.disabled=true;$('send-message').disabled=true;$('send-message').textContent='Sending…';$('chat-hint').textContent='Waiting for OpenAI response…';
+  const historyBox=$('chat-history');if(historyBox.querySelector('.empty'))historyBox.replaceChildren();historyBox.append(messageNode({role:'user',content:text}));historyBox.scrollTop=historyBox.scrollHeight;
+  try{await request('POST',`/sessions/${encodeURIComponent(appState.current)}/chat`,{message:text});box.value='';await loadChat();}
+  catch(e){const item=el('article','message error');item.append(el('div','message-label','Chat error'),el('div','message-text',e.message));historyBox.append(item);historyBox.scrollTop=historyBox.scrollHeight;notify(e.message);}
+  finally{appState.sending=false;box.disabled=appState.detail?.status!=='active';$('send-message').disabled=box.disabled;$('send-message').textContent='Send message';$('chat-hint').textContent='Enter to send · Shift+Enter for a new line';box.focus();}
+}
+function showModal(id){if(window.bootstrap){bootstrap.Modal.getOrCreateInstance($(id)).show();return;}$(id).classList.add('fallback-open');$(id).setAttribute('aria-hidden','false');}
+function hideModal(id){if(window.bootstrap){bootstrap.Modal.getInstance($(id))?.hide();return;}$(id).classList.remove('fallback-open');$(id).setAttribute('aria-hidden','true');}
+function openNewSession(){if(!appState.projects.length){notify('Create a project first.');showModal('project-modal');return;}$('session-project').replaceChildren();for(const p of appState.projects){const option=el('option','',p.name);option.value=p.id;$('session-project').append(option);}showModal('session-modal');}
+async function createSession(e){e.preventDefault();const title=$('session-title').value.trim(),projectId=$('session-project').value;if(!title||!projectId)return;try{const s=await request('POST','/sessions',{title,projectId});hideModal('session-modal');$('session-form').reset();await refreshData();await openChat(s.id);notify('Session created.');}catch(err){notify(err.message);}}
+async function createProject(e){e.preventDefault();const name=$('project-name').value.trim(),language=$('project-language').value.trim(),repositoryUrl=$('project-url').value.trim();const payload={name,userId:appState.projects[0]?.userId||'usr_demo_one'};if(language)payload.language=language;if(repositoryUrl)payload.repositoryUrl=repositoryUrl;try{await request('POST','/projects',payload);hideModal('project-modal');$('project-form').reset();await refreshData();if(appState.route==='/dashboard')renderDashboard();notify('Project created.');}catch(err){notify(err.message);}}
+async function archiveSession(){if(!appState.current||!confirm('Archive this session? You can still read its messages.'))return;try{await request('PATCH','/sessions/'+encodeURIComponent(appState.current),{status:'archived'});await refreshData();await loadChat();notify('Session archived.');}catch(e){notify(e.message);}}
 
-    <script>
-      "use strict";
-      const el = id => document.getElementById(id);
-      let busy = false;
+// Build 2 dashboard runs actual API requests, with the real status and X-Request-Id.
+const demo={sessionId:null,projectId:null,next:null,lastCreated:null};
+async function demoFetch(method,path,body,accept='application/json',contentType='application/json'){
+  const opts={method,headers:{Accept:accept}};
+  if(body!==undefined){opts.headers['Content-Type']=contentType;opts.body=JSON.stringify(body);}
+  let r;try{r=await fetch(path,opts);}catch(e){throw Error('Network request failed: '+e.message);}
+  const raw=await r.text();let parsed;try{parsed=JSON.parse(raw);}catch{parsed=raw;}
+  return {status:r.status,ok:r.ok,requestId:r.headers.get('X-Request-Id')||'—',contentType:r.headers.get('Content-Type')||'—',url:path,data:parsed};
+}
+function demoLine(r){let data=typeof r.data==='string'?r.data:JSON.stringify(r.data,null,2);if(data.length>7000)data=data.slice(0,7000)+'\n… (display truncated)';return `${r.url}\nHTTP ${r.status} | ${r.contentType} | Request ID ${r.requestId}\n${data}`;}
+function demoReport(n,parts,ok=true){const box=$('demo-output-'+n),state=$('demo-state-'+n);box.classList.remove('hidden');box.textContent=parts.join('\n\n———\n\n');state.textContent=ok?'PASS (live HTTP)':'CHECK RESULT';state.className='demo-state '+(ok?'pass':'fail');}
+function demoSession(){return demo.sessionId||appState.sessions[0]?.id||null;}
+async function demoRefresh(){if(!appState.projects.length||!appState.sessions.length){try{await refreshData();}catch(e){notify('Demo: '+e.message);}}demo.sessionId=demoSession();demo.projectId=appState.projects[0]?.id||null;}
+// For the composite demo, validate the session from the API before requesting an outage.
+// If a fresh DB has projects but no sessions, create one demo session and read it back.
+async function resolveDemoCompositeSession(parts){
+  const cached=demoSession();
+  if(cached){
+    const existing=await demoFetch('GET','/sessions/'+encodeURIComponent(cached));
+    if(existing.status===200 && existing.data?.id){demo.sessionId=existing.data.id;return existing.data.id;}
+    parts.push('Cached session is unavailable; discovering a valid session from PostgreSQL.');
+  }
+  const list=await demoFetch('GET','/sessions?limit=1&sort=createdAt&order=asc');
+  if(list.status!==200)throw Error('Cannot list database sessions (HTTP '+list.status+').');
+  const found=list.data?.items?.[0]?.id;
+  if(found){demo.sessionId=found;return found;}
+  const projects=await demoFetch('GET','/projects?limit=1');
+  if(projects.status!==200)throw Error('Cannot list projects (HTTP '+projects.status+').');
+  const projectId=projects.data?.items?.[0]?.id;
+  if(!projectId)throw Error('No projects available for the composite demo. Start normally with .\\run.ps1 (not -EmptyDemo), or create a project first.');
+  const created=await demoFetch('POST','/sessions',{projectId,title:'Build 2 composite demonstration'});
+  if(created.status!==201||!created.data?.id)throw Error('Could not create a session for the composite demo (HTTP '+created.status+').');
+  demo.sessionId=created.data.id;
+  parts.push('Created a session for the demonstration:',demoLine(created));
+  await refreshData();
+  return demo.sessionId;
+}
+async function demoRun(n,mode){const button=mode==='offline'?$('demo-outage'):document.querySelector('[data-demo="'+n+'"]');if(button)button.disabled=true;const parts=[];let ok=true;try{if(n===5){$('demo-state-5').textContent='Running request…';}
+  await demoRefresh();
+  if(n===1){const list=await demoFetch('GET','/sessions');parts.push('Original Build 1 list GET',demoLine(list));const arr=Array.isArray(list.data)?list.data:[];const id=arr[0]?.id||demoSession();if(id){demo.sessionId=id;const item=await demoFetch('GET','/sessions/'+encodeURIComponent(id));parts.push('Original Build 1 item GET',demoLine(item));ok=ok&&list.status===200&&item.status===200;}else{ok=false;parts.push('No seeded sessions: run .\run.ps1 then inspect your seed data.');}const notFound=await demoFetch('GET','/sessions/osiris_missing_build2_id');parts.push('Missing item response',demoLine(notFound));ok=ok&&notFound.status===404;}
+  else if(n===2){const query=new URLSearchParams({limit:$('demo-limit').value,offset:'0',sort:$('demo-sort').value,order:'asc'});const status=$('demo-filter').value;if(status)query.set('status',status);const r=await demoFetch('GET','/sessions?'+query);parts.push(demoLine(r));demo.next=r.data?.links?.next||null;$('demo-next').disabled=!demo.next;parts.push('Next link: '+(demo.next||'(no next page; result has reached its boundary)'));ok=r.status===200&&Array.isArray(r.data?.items);}
+  else if(n===3){if(!demo.projectId)throw Error('No existing project. Create one through Dashboard first.');const title=$('demo-title').value.trim()||'Build 2 classroom demo';const created=await demoFetch('POST','/sessions',{projectId:demo.projectId,title});parts.push('Create',demoLine(created));if(!created.ok||!created.data?.id)throw Error('Create failed; no record was persisted.');demo.lastCreated=created.data.id;demo.sessionId=created.data.id;const update=await demoFetch('PATCH','/sessions/'+encodeURIComponent(demo.sessionId),{title:title+' (updated)'});parts.push('Update',demoLine(update));const item=await demoFetch('GET','/sessions/'+encodeURIComponent(demo.sessionId));parts.push('Read from database',demoLine(item));ok=created.status===201&&update.status===200&&item.data?.title===title+' (updated)';await refreshData();}
+  else if(n===4){const id=demoSession();if(!id)throw Error('Create or seed a session first.');for(const type of ['application/json','application/xml','application/yaml']){const r=await demoFetch('GET','/sessions/'+encodeURIComponent(id),undefined,type);parts.push('Accept: '+type,demoLine(r));ok=ok&&r.status===200&&r.contentType.toLowerCase().includes(type);}const invalid=await demoFetch('GET','/sessions?sort=invalid_field');parts.push('Validation error',demoLine(invalid));ok=ok&&invalid.status===400;const unsupported=await demoFetch('GET','/sessions/'+encodeURIComponent(id),undefined,'text/csv');parts.push('Unsupported Accept',demoLine(unsupported));ok=ok&&unsupported.status===406;}
+  else if(n===5){const id=await resolveDemoCompositeSession(parts);const url='/sessions/'+encodeURIComponent(id)+'/context'+(mode==='offline'?'?simulateUpstreamFailure=1':'');const r=await demoFetch('GET',url);parts.push(mode==='offline'?'Simulated GitHub outage — PostgreSQL still available':'Normal PostgreSQL + GitHub composite',demoLine(r));parts.push('Sources: PostgreSQL (session, project, messages, tasks) and GitHub REST API (public repository metadata). On simulated outage: HTTP 200; external.status=unavailable; external.reason=simulated_upstream_failure.');ok=r.status===200&&r.data?.sources?.local==='PostgreSQL'&&(mode==='offline'?r.data?.external?.status==='unavailable'&&r.data?.external?.reason==='simulated_upstream_failure':true);if(!ok)parts.push('Unexpected composite output: check the displayed HTTP response and request ID.');}
+  else if(n===6){const checks=[['GET','/sessions'],['GET','/sessions/osiris_missing_build2_id'],['GET','/sessions?limit=0'],['GET','/sessions?offset=1000001'],['GET','/sessions?sort=invalid_field'],['GET','/api/runtime']];const expected=[200,404,400,400,400,200];for(let i=0;i<checks.length;i++){const r=await demoFetch(...checks[i]);parts.push(demoLine(r));ok=ok&&r.status===expected[i];}parts.push('Expected HTTP status codes: '+expected.join(', '),'Complete database suite is separate: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\test.ps1');}
+  demoReport(n,parts,ok);
+}catch(e){parts.push('Error: '+e.message);demoReport(n,parts,false);}finally{if(button)button.disabled=false;}}
+async function demoNext(){if(!demo.next)return;const link=demo.next;const r=await demoFetch('GET',link);demo.next=r.data?.links?.next||null;$('demo-next').disabled=!demo.next;const q=new URL(link,location.href).searchParams;const old=$('demo-output-2').textContent;$('demo-output-2').textContent=old+'\n\n——— FOLLOWING NEXT LINK ——–\n\n'+demoLine(r)+'\n\nPreserved status='+q.get('status')+', sort='+q.get('sort')+', order='+q.get('order')+', limit='+q.get('limit');$('demo-state-2').textContent=r.status===200?'PASS (followed next link)':'CHECK RESULT';}
 
-      async function request(path) {
-        if (busy) return;
-        busy = true;
-        el("notice").textContent = "";
-        document.querySelectorAll("button, input").forEach(control => control.disabled = true);
-        try {
-          const response = await fetch(path, { headers: { Accept: "application/json" } });
-          const value = await response.json();
-          el("request-line").textContent = `GET ${path} - HTTP ${response.status}`;
-          el("response").textContent = JSON.stringify(value, null, 2);
-          if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
-          if (Array.isArray(value)) {
-            el("sessions").replaceChildren();
-            el("list-state").textContent = value.length ? `${value.length} sessions.` : "No sessions found.";
-            for (const session of value) {
-              const item = document.createElement("li");
-              const button = document.createElement("button");
-              button.type = "button";
-              button.textContent = `${session.title} (${session.id})`;
-              button.onclick = () => {
-                el("session-id").value = session.id;
-                request(`/sessions/${encodeURIComponent(session.id)}`);
-              };
-              item.append(button);
-              el("sessions").append(item);
-            }
-          }
-        } catch (error) {
-          el("notice").textContent = error.message;
-        } finally {
-          busy = false;
-          document.querySelectorAll("button, input").forEach(control => control.disabled = false);
-        }
-      }
-
-      el("load-sessions").onclick = () => request("/sessions");
-      el("session-form").onsubmit = event => {
-        event.preventDefault();
-        request(`/sessions/${encodeURIComponent(el("session-id").value)}`);
-      };
-    </script>
-  </body>
+async function init(){document.querySelectorAll('[data-demo]').forEach(b=>b.addEventListener('click',()=>demoRun(Number(b.dataset.demo))));$('demo-next').onclick=()=>demoNext().catch(e=>notify(e.message));$('demo-outage').onclick=()=>demoRun(5,'offline');$('demo-refresh').onclick=()=>demoRefresh().then(()=>notify('Demo data refreshed.'));document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(b=>b.addEventListener('click',()=>{if(!window.bootstrap){const m=b.closest('.modal');if(m)hideModal(m.id);}}));document.querySelectorAll('[data-route]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.route)));document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>b.dataset.action==='new-project'?showModal('project-modal'):openNewSession()));$('login-form').onsubmit=e=>{e.preventDefault();const name=$('login-name').value.trim();if(name.length<2)return;appState.name=name;sessionStorage.setItem('osiris-demo-user',name);go('/dashboard');};$('logout').onclick=()=>{appState.name='';appState.current='';sessionStorage.removeItem('osiris-demo-user');sessionStorage.removeItem('osiris-session');go('/login');};$('filter-form').onsubmit=e=>{e.preventDefault();loadSessions().catch(err=>notify(err.message));};$('previous-page').onclick=()=>appState.links.previous&&loadSessions(appState.links.previous).catch(err=>notify(err.message));$('next-page').onclick=()=>appState.links.next&&loadSessions(appState.links.next).catch(err=>notify(err.message));$('chat-form').onsubmit=sendChat;$('message-text').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!$('send-message').disabled)$('chat-form').requestSubmit();}};$('session-form').onsubmit=createSession;$('project-form').onsubmit=createProject;$('archive-session').onclick=archiveSession;$('refresh-sessions').onclick=async()=>{try{await refreshData();renderChatSessions();}catch(e){notify(e.message);}};window.addEventListener('popstate',renderRoute);go(appState.name?(getPath()==='/login'?'/dashboard':getPath()):'/login',true);}
+init();
+</script>
+</body>
 </html>

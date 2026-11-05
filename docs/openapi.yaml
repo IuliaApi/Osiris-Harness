@@ -1,129 +1,508 @@
+# Build 2 UI includes /build-2 for interactive live checks.
+# Composite controlled failure: GET /sessions/{id}/context?simulateUpstreamFailure=1
+# returns the PostgreSQL context plus external.status=unavailable and reason=simulated_upstream_failure.
 openapi: 3.0.3
 info:
-  title: Osiris Build 1
-  version: 1.0.0
-  description: >-
-    Local PHP API with two read operations. All persisted sessions are visible across
-    owners. No authentication, filters, pagination, or writes are implemented.
-    GET / serves an HTML page outside this API contract. Other methods on known
-    routes return 405 with Allow: GET; unknown routes return 404.
+  title: Osiris AI Harness Build 2 API
+  version: 2.2.0
+  description: Local development API. No authentication or authorization. Provider-backed chat requires a configured third-party API or local Ollama. No shell or filesystem tools. Session GET with
+    no query parameters preserves the Build 1 plain-array response. GET supports JSON, XML and YAML via Accept;
+    writes consume application/json. External composite has partial-data failure policy.
 servers:
-  - url: http://127.0.0.1:8080
-    description: Local populated database
-  - url: http://127.0.0.1:8081
-    description: Separate empty database started with -EmptyDemo -Port 8081
+- url: http://127.0.0.1:8080
 paths:
+  /api/runtime:
+    get:
+      operationId: getRuntime
+      summary: List selectable AI providers (no keys, no connection test)
+      responses:
+        '200':
+          description: Provider and harness capability status
+          content:
+            application/json:
+              schema:
+                type: object
+            application/xml:
+              schema:
+                type: object
+            application/yaml:
+              schema:
+                type: object
+        '406':
+          $ref: '#/components/responses/Error'
+  /sessions/{sessionId}/chat:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
+    post:
+      operationId: chatInSession
+      summary: Submit chat to selected real model, save both turns in PostgreSQL on success
+      description: |
+        No simulated answer. Provider choices are openai (Responses), anthropic (Messages),
+        and ollama (local /api/chat on Docker host). Keys are configured on the server.
+        At most 12 previous text turns are sent upstream. No executable shell or file tools.
+        Provider failure returns a structured error and saves neither turn.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 6000
+                provider:
+                  type: string
+                  enum: [openai, anthropic, ollama]
+                model:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+      responses:
+        '200':
+          description: Successfully saved user and assistant messages
+          content:
+            application/json:
+              schema:
+                type: object
+            application/xml:
+              schema:
+                type: object
+            application/yaml:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List projects
+      parameters:
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/offset'
+      - $ref: '#/components/parameters/sort'
+      - $ref: '#/components/parameters/order'
+      - $ref: '#/components/parameters/view'
+      - name: userId
+        in: query
+        schema:
+          type: string
+      - name: language
+        in: query
+        schema:
+          type: string
+      - name: q
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Collection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createProject
+      summary: Create project
+      requestBody:
+        $ref: '#/components/requestBodies/Project'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+  /projects/{projectId}:
+    parameters:
+    - $ref: '#/components/parameters/projectId'
+    get:
+      operationId: getProject
+      responses:
+        '200':
+          $ref: '#/components/responses/Item'
+        '404':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: patchProject
+      requestBody:
+        $ref: '#/components/requestBodies/Project'
+      responses:
+        '200':
+          $ref: '#/components/responses/Item'
+        '409':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteProject
+      description: Returns 409 if sessions reference the project.
+      responses:
+        '204':
+          description: Deleted
+        '409':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+  /projects/{projectId}/sessions:
+    parameters:
+    - $ref: '#/components/parameters/projectId'
+    get:
+      operationId: listProjectSessions
+      parameters:
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/offset'
+      - $ref: '#/components/parameters/sort'
+      - $ref: '#/components/parameters/order'
+      - $ref: '#/components/parameters/view'
+      - $ref: '#/components/parameters/include'
+      responses:
+        '200':
+          $ref: '#/components/responses/Collection'
+        '404':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createProjectSession
+      requestBody:
+        $ref: '#/components/requestBodies/Session'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
   /sessions:
     get:
       operationId: listSessions
-      summary: List all sessions
-      description: >-
-        Returns a plain array ordered by created_at ascending, then id ascending.
-        There are no query filters or ownership restrictions. Existing local rows
-        are included, so a populated database need not have exactly five sessions.
+      description: 'With no query parameters returns the Build 1 array of sessions (all rows). Any collection query
+        parameter opts into {items,page}. Defaults: limit=25, offset=0, sort=createdAt, order=asc. Stable id tie-breaker.'
+      parameters:
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/offset'
+      - $ref: '#/components/parameters/sort'
+      - $ref: '#/components/parameters/order'
+      - $ref: '#/components/parameters/view'
+      - $ref: '#/components/parameters/include'
+      - name: projectId
+        in: query
+        schema:
+          type: string
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - active
+          - completed
+          - archived
+      - name: q
+        in: query
+        schema:
+          type: string
       responses:
         '200':
-          description: All sessions, or an empty array when no sessions exist.
+          description: Legacy array without query controls; paginated object otherwise.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Session'
-              examples:
-                populated:
-                  summary: The five canonical seed rows in SQL order
-                  value:
-                    - id: ses_103
-                      projectId: prj_ai
-                      title: Review error messages
-                      status: archived
-                      createdAt: '2026-10-09T09:00:00Z'
-                      updatedAt: '2026-10-13T16:00:00Z'
-                    - id: ses_101
-                      projectId: prj_ai
-                      title: Investigate crash
-                      status: active
-                      createdAt: '2026-10-10T14:00:00Z'
-                      updatedAt: '2026-10-14T15:30:00Z'
-                    - id: ses_202
-                      projectId: prj_web
-                      title: Test contact form
-                      status: completed
-                      createdAt: '2026-10-11T08:00:00Z'
-                      updatedAt: '2026-10-13T10:00:00Z'
-                    - id: ses_102
-                      projectId: prj_ai
-                      title: Add tests
-                      status: completed
-                      createdAt: '2026-10-11T10:00:00Z'
-                      updatedAt: '2026-10-12T11:00:00Z'
-                    - id: ses_201
-                      projectId: prj_web
-                      title: Fix navigation
-                      status: active
-                      createdAt: '2026-10-12T09:00:00Z'
-                      updatedAt: '2026-10-14T12:00:00Z'
-                empty:
-                  summary: No sessions in the isolated empty database
-                  value: []
-        '500':
-          $ref: '#/components/responses/ServerFailure'
+                oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Session'
+                - $ref: '#/components/schemas/Collection'
+            application/xml:
+              schema:
+                oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Session'
+                - $ref: '#/components/schemas/Collection'
+            application/yaml:
+              schema:
+                oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Session'
+                - $ref: '#/components/schemas/Collection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createSession
+      requestBody:
+        $ref: '#/components/requestBodies/Session'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
   /sessions/{sessionId}:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
     get:
       operationId: getSession
-      summary: Get one session
       parameters:
-        - name: sessionId
-          in: path
-          required: true
-          description: Session ID, regardless of its project's owner.
-          schema:
-            type: string
-            minLength: 1
-          example: ses_101
+      - $ref: '#/components/parameters/view'
+      - $ref: '#/components/parameters/include'
       responses:
         '200':
-          description: The persisted session.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Session'
-              examples:
-                existing:
-                  summary: The canonical ses_101 row
-                  value:
-                    id: ses_101
-                    projectId: prj_ai
-                    title: Investigate crash
-                    status: active
-                    createdAt: '2026-10-10T14:00:00Z'
-                    updatedAt: '2026-10-14T15:30:00Z'
+          $ref: '#/components/responses/Item'
         '404':
-          description: No session has this ID.
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: patchSession
+      requestBody:
+        $ref: '#/components/requestBodies/Session'
+      responses:
+        '200':
+          $ref: '#/components/responses/Item'
+        '422':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteSession
+      description: Returns 409 if messages or tasks reference the session.
+      responses:
+        '204':
+          description: Deleted
+        '409':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
+  /sessions/{sessionId}/messages:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
+    get:
+      operationId: listMessages
+      parameters:
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/Collection'
+        '406':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: appendMessage
+      requestBody:
+        $ref: '#/components/requestBodies/Message'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+  /sessions/{sessionId}/messages/{messageId}:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
+    - name: messageId
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      operationId: getMessage
+      responses:
+        '200':
+          $ref: '#/components/responses/Item'
+        '406':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteMessage
+      responses:
+        '204':
+          description: Deleted
+        '406':
+          $ref: '#/components/responses/Error'
+  /sessions/{sessionId}/tasks:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
+    get:
+      operationId: listTasks
+      parameters:
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/Collection'
+        '406':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTask
+      requestBody:
+        $ref: '#/components/requestBodies/Task'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+  /sessions/{sessionId}/tasks/{taskId}:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      operationId: getTask
+      responses:
+        '200':
+          $ref: '#/components/responses/Item'
+        '406':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: patchTask
+      requestBody:
+        $ref: '#/components/requestBodies/Task'
+      responses:
+        '200':
+          $ref: '#/components/responses/Item'
+        '406':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteTask
+      responses:
+        '204':
+          description: Deleted
+        '406':
+          $ref: '#/components/responses/Error'
+  /sessions/{sessionId}/context:
+    parameters:
+    - $ref: '#/components/parameters/sessionId'
+    get:
+      operationId: getSessionExternalContext
+      summary: Compose local PostgreSQL harness session with external public GitHub repository metadata
+      description: Reads session/project/messages/tasks from local PostgreSQL and validates a GitHub URL before
+        GET to api.github.com/repos/{owner}/{repo} (2s timeout, no redirects, 64KiB cap). HTTP 200 with external.status=unavailable
+        and reason on upstream failure; DB errors are still standard errors. Nested messages and tasks capped at
+        25 each. OSIRIS_GITHUB_MODE=offline demonstrates upstream failure.
+      responses:
+        '200':
+          description: Composed context, partial external data on failure
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                missing:
-                  summary: GET /sessions/ses_missing
-                  value:
-                    error: Session not found
-        '500':
-          $ref: '#/components/responses/ServerFailure'
+                $ref: '#/components/schemas/Context'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Context'
+            application/yaml:
+              schema:
+                $ref: '#/components/schemas/Context'
+        '404':
+          $ref: '#/components/responses/Error'
+        '406':
+          $ref: '#/components/responses/Error'
 components:
+  parameters:
+    projectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+    sessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 1000000
+        default: 0
+    sort:
+      name: sort
+      in: query
+      description: 'Resource-specific whitelist: createdAt, updatedAt, id and supported display fields'
+      schema:
+        type: string
+    order:
+      name: order
+      in: query
+      schema:
+        type: string
+        enum:
+        - asc
+        - desc
+        default: asc
+    view:
+      name: view
+      in: query
+      schema:
+        type: string
+        enum:
+        - summary
+        - full
+        default: full
+    include:
+      name: include
+      in: query
+      description: Session only; comma-separated project,messages,tasks (nested lists capped at 25)
+      schema:
+        type: string
   schemas:
     Session:
       type: object
-      additionalProperties: false
-      required:
-        - id
-        - projectId
-        - title
-        - status
-        - createdAt
-        - updatedAt
       properties:
         id:
           type: string
@@ -133,29 +512,206 @@ components:
           type: string
         status:
           type: string
-          enum: [active, completed, archived]
+          enum:
+          - active
+          - completed
+          - archived
         createdAt:
           type: string
           format: date-time
-          description: RFC 3339 in UTC with Z; fractional seconds are omitted when zero.
         updatedAt:
           type: string
           format: date-time
-          description: RFC 3339 in UTC with Z; fractional seconds are omitted when zero.
+    Collection:
+      type: object
+      required:
+      - items
+      - page
+      - links
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        page:
+          type: object
+          properties:
+            total:
+              type: integer
+            limit:
+              type: integer
+            offset:
+              type: integer
+            hasMore:
+              type: boolean
+        links:
+          type: object
+          description: Relative URLs. Each preserves the current filters, sort, view, include, and search.
+          properties:
+            self:
+              type: string
+              nullable: false
+            next:
+              type: string
+              nullable: true
+            previous:
+              type: string
+              nullable: true
     Error:
       type: object
-      additionalProperties: false
-      required:
-        - error
       properties:
         error:
           type: string
+        code:
+          type: string
+        requestId:
+          type: string
+    Context:
+      type: object
+      required:
+      - session
+      - project
+      - messages
+      - tasks
+      - external
+      - sources
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        project:
+          type: object
+        messages:
+          type: object
+          description: items and page; at most 25 entries
+        tasks:
+          type: object
+          description: items and page; at most 25 entries
+        external:
+          type: object
+          required:
+          - source
+          - status
+          - repository
+          properties:
+            source:
+              type: string
+            status:
+              type: string
+              enum:
+              - ok
+              - unavailable
+              - not_configured
+            reason:
+              type: string
+            repository:
+              type: object
+              nullable: true
+        sources:
+          type: object
+  requestBodies:
+    Project:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              userId:
+                type: string
+              name:
+                type: string
+              language:
+                type: string
+              repositoryUrl:
+                type: string
+    Session:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              projectId:
+                type: string
+              title:
+                type: string
+              status:
+                type: string
+    Message:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+    Task:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              title:
+                type: string
+              status:
+                type: string
+              result:
+                type: string
   responses:
-    ServerFailure:
-      description: Database or server operation failed; diagnostics stay in the server log.
+    Item:
+      description: Resource representation
+      content:
+        application/json:
+          schema:
+            type: object
+        application/xml:
+          schema:
+            type: object
+        application/yaml:
+          schema:
+            type: object
+    Created:
+      description: Created resource
+      headers:
+        Location:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            type: object
+        application/xml:
+          schema:
+            type: object
+        application/yaml:
+          schema:
+            type: object
+    Collection:
+      description: Paginated resource collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Collection'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Collection'
+        application/yaml:
+          schema:
+            $ref: '#/components/schemas/Collection'
+    Error:
+      description: Structured error response
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-          example:
-            error: Database or server operation failed
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+        application/yaml:
+          schema:
+            $ref: '#/components/schemas/Error'
+security: []

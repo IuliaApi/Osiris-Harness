@@ -1,5 +1,5 @@
 {
-  "name": "osiris/build-1",
+  "name": "osiris/harness-build-2-terminal",
   "type": "project",
   "require": {
     "php": ">=8.4",

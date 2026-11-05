@@ -18,15 +18,18 @@ if ($EmptyDemo) {
     $tableCount = Invoke-LocalSql "SELECT count(*) FROM pg_tables WHERE schemaname='public';" $databaseName
     if ($tableCount -eq '0') {
         $null = Invoke-LocalSql (Get-Content -LiteralPath (Join-Path $repoPath 'database\schema.sql') -Raw) $databaseName
-    } elseif ($tableCount -ne '3' -or (Invoke-LocalSql "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('users','projects','sessions');" $databaseName) -ne '3') {
+    } elseif ($tableCount -notin @('3','5') -or (Invoke-LocalSql "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('users','projects','sessions');" $databaseName) -ne '3') {
         throw 'The empty fixture has an unexpected schema. No data was changed.'
     }
-    if ((Invoke-LocalSql 'SELECT (SELECT count(*) FROM projects)+(SELECT count(*) FROM sessions);' $databaseName) -ne '0') {
+    $null = Invoke-LocalSql (Get-Content -LiteralPath (Join-Path $repoPath 'database\build2.sql') -Raw) $databaseName
+    if ((Invoke-LocalSql 'SELECT (SELECT count(*) FROM projects)+(SELECT count(*) FROM sessions)+(SELECT count(*) FROM messages)+(SELECT count(*) FROM tasks);' $databaseName) -ne '0') {
         throw 'The empty fixture contains records. Refusing to clear it.'
     }
     Write-Output $databaseName
     return
 }
+
+$null = Invoke-LocalSql (Get-Content -LiteralPath (Join-Path $repoPath 'database\build2.sql') -Raw)
 
 $fixtureState = Invoke-LocalSql @'
 WITH counts AS (

@@ -1,0 +1,166 @@
+{
+  "project": "Osiris AI Harness",
+  "build": 2,
+  "scope": "Operations, collections, representations and connected workflows",
+  "courseDueDate": "2026-10-29",
+  "revisionPreparedOn": "2026-11-04",
+  "gradingNote": "The course document assigns 23% to implementation across all three builds; it does not assign a separate Build 2 mark.",
+  "repository": {
+    "url": "https://github.com/IuliaApi/Osiris-Harness.git",
+    "suppliedBuild1Commit": "efe95ac91c74a77f7a3e3a22d0ac65989416cb81",
+    "build2PublishedCommit": null,
+    "publicationStatus": "local review only; not pushed or submitted by this assistant",
+    "teacherRepositoryAccessConfirmed": false,
+    "teacherAccessStatus": "student confirmation required"
+  },
+  "contributors": [
+    {
+      "name": null,
+      "role": "student implementation and project ownership",
+      "status": "fill from actual team records"
+    }
+  ],
+  "reviewers": [
+    {
+      "name": null,
+      "role": "reviewer",
+      "status": "review and sign-off pending"
+    }
+  ],
+  "changesFromBuild1": [
+    "Preserved original PostgreSQL-backed GET /sessions and GET /sessions/{sessionId} and their simple HTML flow",
+    "Added additive PostgreSQL messages/tasks tables and migration for existing Build 1 installations",
+    "Added project, session, message and task write operations and browser CRUD forms",
+    "Implemented bounded filters, search, allowlisted sorting, unique ID tie-breaker and query-preserving page links",
+    "Added summary/full/composed representations, JSON/XML/YAML Accept handling and safe structured errors",
+    "Integrated bounded public GitHub metadata with PostgreSQL in GET /sessions/{sessionId}/context and a partial-failure policy",
+    "Provided PHP and JavaScript consumers and expanded contract, saved requests and tests",
+    "Post-deadline November 5 extension: dark dashboard, terminal chat, provider settings, server-side OpenAI/Anthropic/Ollama adapters, and PHP CLI; no simulated model replies"
+  ],
+  "plannedRequirements": [
+    {
+      "id": "B2-01",
+      "name": "Build 1 item/list GET continuity and pages",
+      "status": "implemented",
+      "evidence": "backend/public/index.php; web/index.html; test.ps1"
+    },
+    {
+      "id": "B2-02",
+      "name": "Additive database schema, migration and seed workflow",
+      "status": "implemented",
+      "evidence": "database/build2.sql; database/schema.sql; scripts/prepare-db.ps1"
+    },
+    {
+      "id": "B2-03",
+      "name": "Project/session/message/task domain operations and client lifecycle",
+      "status": "implemented",
+      "evidence": "backend/public/index.php; web/index.html; test.ps1"
+    },
+    {
+      "id": "B2-04",
+      "name": "Filters, sorting, pagination, bounds, links, empty and invalid cases",
+      "status": "implemented",
+      "evidence": "Store::list; paginationLinks; test.ps1"
+    },
+    {
+      "id": "B2-05",
+      "name": "Shared validation, errors, request IDs, logs and parameterized SQL",
+      "status": "implemented",
+      "evidence": "backend/public/index.php; test.ps1"
+    },
+    {
+      "id": "B2-06",
+      "name": "JSON/XML/YAML output negotiation and input/output media matrix",
+      "status": "implemented",
+      "evidence": "backend/public/Representation.php; docs/build-2.md; scripts/test-representations.php"
+    },
+    {
+      "id": "B2-07",
+      "name": "PostgreSQL + external GitHub composite and consumers",
+      "status": "implemented",
+      "evidence": "backend/public/GitHubContext.php; web/index.html; scripts/context-consumer.php"
+    },
+    {
+      "id": "B2-08",
+      "name": "Security roles, ownership plan, route boundary; leave enforcement to Build 3",
+      "status": "documented",
+      "evidence": "docs/build-2.md; docs/build-2-board.md"
+    },
+    {
+      "id": "B2-09",
+      "name": "OpenAPI, Postman, manifest, board, release packet and reproduction guide",
+      "status": "implemented",
+      "evidence": "docs/openapi.yaml; requests/Osiris.local.postman_collection.json; docs/release-packet.md"
+    },
+    {
+      "id": "B2-10",
+      "name": "Run Docker PostgreSQL HTTP/regression suite and record results",
+      "status": "verification_pending",
+      "evidence": "test.ps1 exists; no Docker execution in authoring environment"
+    },
+    {
+      "id": "B2-11",
+      "name": "Demonstrate actual GitHub 200 composite from a public repository",
+      "status": "verification_pending",
+      "evidence": "offline failure helper tested; live public API success unverified"
+    },
+    {
+      "id": "B2-12",
+      "name": "Teacher access, repository release and LEA submission evidence",
+      "status": "external_confirmation_pending",
+      "evidence": "docs/release-packet.md contains exact student follow-up checklist"
+    },
+    {
+      "id": "B2-13",
+      "name": "Post-deadline terminal chat and multi-provider settings (OpenAI, Anthropic, Ollama)",
+      "status": "implemented_locally_provider_network_unverified",
+      "evidence": "backend/public/AIProvider.php; web/index.html; scripts/osiris-cli.php; scripts/test-ai-provider.php"
+    }
+  ],
+  "verification": {
+    "executed": [
+      "PHP 8.4 lint for backend/public/*.php and scripts/*.php",
+      "php scripts/test-representations.php",
+      "python scripts/test-semantic-formats.py (optional PyYAML)",
+      "python scripts/test-http-no-db.py (loopback PHP HTTP checks: HTML, 404, 405, 406 and logs)",
+      "Node.js syntax check for embedded browser JavaScript",
+      "Parse OpenAPI as YAML and Postman as JSON",
+      "php scripts/test-ai-provider.php (real-provider selection/parsing, credential handling and missing-key failure)"
+    ],
+    "notExecuted": [
+      "Full Docker Compose / PostgreSQL API regression test: .\\test.ps1",
+      "PostgreSQL migration replay against an actual Build 1 volume",
+      "PowerShell test runner runtime on the user's host",
+      "Successful GitHub network call and browser click-through demo",
+      "Teacher access verification and course submission",
+      "Live model calls to OpenAI/Anthropic/Ollama; connection status only reflects configuration, not network reachability"
+    ]
+  },
+  "build3Tickets": [
+    "B3-01 secure authentication, logout, password hashes and CSRF-protected sessions",
+    "B3-02 project ownership, membership and protected-route authorization",
+    "B3-03 managed model/provider secrets, execution approvals and tool sandboxing",
+    "B3-04 task concurrency/state machine, execution provenance and retention",
+    "B3-05 CI and database-backed integration verification plus XML/YAML parser interoperability",
+    "B3-06 rate limits, audit logs, privacy and credential-redaction review"
+  ],
+  "submission": {
+    "method": "LEA as specified by teacher",
+    "submitted": false,
+    "proofLocation": null
+  },
+  "lastLocalUpdateOn": "2026-11-05",
+  "extension": {
+    "label": "Build 2 AI Workspace / chat-only follow-up",
+    "ui": "Modern dark dashboard and terminal chat with separate provider settings",
+    "providers": [
+      "openai",
+      "anthropic",
+      "ollama"
+    ],
+    "showReasoning": false,
+    "toolsAndShellExecution": false,
+    "realProviderConnectionVerified": false,
+    "postgresChatIntegrationVerified": false
+  }
+}

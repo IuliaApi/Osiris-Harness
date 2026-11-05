@@ -1,79 +1,1037 @@
 {
   "info": {
-    "name": "Osiris Build 1",
-    "description": "Read seeded sessions on port 8080 and an empty database on port 8081.",
+    "name": "Osiris Build 2 AI Harness",
+    "description": "Build 1 reads and Build 2 collection/CRUD operations. Writes modify your local database; use isolated test fixtures for demonstrations.\nRecommended release evidence: run the isolated named CRUD lifecycle in order on a development fixture; never point destructive requests at production. The published Git/LEA submission record must be confirmed separately.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "auth": { "type": "noauth" },
+  "auth": {
+    "type": "noauth"
+  },
   "variable": [
-    { "key": "baseUrl", "value": "http://127.0.0.1:8080" },
-    { "key": "emptyBaseUrl", "value": "http://127.0.0.1:8081" }
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "emptyBaseUrl",
+      "value": "http://127.0.0.1:8081"
+    },
+    {
+      "key": "demoProjectId",
+      "value": "prj_demo_build2"
+    },
+    {
+      "key": "demoSessionId",
+      "value": "ses_demo_build2"
+    },
+    {
+      "key": "demoMessageId",
+      "value": "msg_demo_build2"
+    },
+    {
+      "key": "demoTaskId",
+      "value": "tsk_demo_build2"
+    }
   ],
   "item": [
     {
       "name": "List sessions",
-      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/sessions" },
-      "event": [{
-        "listen": "test",
-        "script": {
-          "type": "text/javascript",
-          "exec": [
-            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-            "pm.test('Canonical seed sessions are present', () => {",
-            "  const sessions = pm.response.json();",
-            "  pm.expect(sessions).to.be.an('array');",
-            "  pm.expect(sessions.map(s => s.id)).to.include.members(['ses_101', 'ses_102', 'ses_103', 'ses_201', 'ses_202']);",
-            "  pm.expect(sessions.find(s => s.id === 'ses_101').title).to.eql('Investigate crash');",
-            "});"
-          ]
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/sessions"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Canonical seed sessions are present', () => {",
+              "  const sessions = pm.response.json();",
+              "  pm.expect(sessions).to.be.an('array');",
+              "  pm.expect(sessions.map(s => s.id)).to.include.members(['ses_101', 'ses_102', 'ses_103', 'ses_201', 'ses_202']);",
+              "  pm.expect(sessions.find(s => s.id === 'ses_101').title).to.eql('Investigate crash');",
+              "});"
+            ]
+          }
         }
-      }]
+      ]
     },
     {
       "name": "Get session",
-      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/sessions/ses_101" },
-      "event": [{
-        "listen": "test",
-        "script": {
-          "type": "text/javascript",
-          "exec": [
-            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-            "pm.test('Seeded ID and title', () => {",
-            "  const session = pm.response.json();",
-            "  pm.expect(session.id).to.eql('ses_101');",
-            "  pm.expect(session.title).to.eql('Investigate crash');",
-            "});"
-          ]
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/sessions/ses_101"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Seeded ID and title', () => {",
+              "  const session = pm.response.json();",
+              "  pm.expect(session.id).to.eql('ses_101');",
+              "  pm.expect(session.title).to.eql('Investigate crash');",
+              "});"
+            ]
+          }
         }
-      }]
+      ]
     },
     {
       "name": "Missing session",
-      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/sessions/ses_missing" },
-      "event": [{
-        "listen": "test",
-        "script": {
-          "type": "text/javascript",
-          "exec": [
-            "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
-            "pm.test('Missing session error', () => pm.expect(pm.response.json()).to.eql({error: 'Session not found'}));"
-          ]
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/sessions/ses_missing"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+              "pm.test('Missing session error', () => pm.expect(pm.response.json()).to.eql({error: 'Session not found'}));"
+            ]
+          }
         }
-      }]
+      ]
     },
     {
       "name": "Empty sessions",
-      "request": { "method": "GET", "header": [], "url": "{{emptyBaseUrl}}/sessions" },
-      "event": [{
-        "listen": "test",
-        "script": {
-          "type": "text/javascript",
-          "exec": [
-            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-            "pm.test('Empty array', () => pm.expect(pm.response.json()).to.be.an('array').that.is.empty);"
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{emptyBaseUrl}}/sessions"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Empty array', () => pm.expect(pm.response.json()).to.be.an('array').that.is.empty);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filtered and paged sessions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/sessions?projectId=prj_ai&status=active&sort=createdAt&order=desc&limit=2&offset=0"
+      }
+    },
+    {
+      "name": "Composed session",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/sessions/ses_101?include=project,messages,tasks"
+      }
+    },
+    {
+      "name": "List projects",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/projects?limit=25"
+      }
+    },
+    {
+      "name": "Project sessions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/projects/prj_ai/sessions?limit=10"
+      }
+    },
+    {
+      "name": "Create session",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"projectId\": \"prj_ai\",\n  \"title\": \"Investigate test failure\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Complete session",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/ses_101",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"completed\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Append user message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/ses_101/messages",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"role\": \"user\",\n  \"content\": \"Please inspect the failure output\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Create harness task",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/ses_101/tasks",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Inspect failing tests\",\n  \"status\": \"pending\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "List session tasks",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/sessions/ses_101/tasks?limit=25"
+      }
+    },
+    {
+      "name": "Follow filtered first page",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions?status=active&sort=title&order=desc&limit=1&offset=0",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions"
           ]
         }
-      }]
+      }
+    },
+    {
+      "name": "Follow filtered second page",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions?status=active&sort=title&order=desc&limit=1&offset=1",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions"
+          ]
+        }
+      }
+    },
+    {
+      "name": "XML session item",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/xml"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101"
+          ]
+        }
+      }
+    },
+    {
+      "name": "YAML session item",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/yaml"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101"
+          ]
+        }
+      }
+    },
+    {
+      "name": "406 unsupported representation",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "image/png"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Composite PostgreSQL + GitHub context",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101/context",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101",
+            "context"
+          ]
+        }
+      }
+    },
+    {
+      "name": "400 page boundary",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions?limit=0",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Build 2 lifecycle 01 - create project",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/projects",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"prj_demo_build2\",\n  \"userId\": \"usr_demo_one\",\n  \"name\": \"Build 2 demonstration\",\n  \"repositoryUrl\": \"https://github.com/php/php-src\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Fresh local fixture only; do not repeat without deleting this named project."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 02 - create session in project",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/projects/{{demoProjectId}}/sessions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"ses_demo_build2\",\n  \"title\": \"Demonstrate AI harness workflow\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 03 - append message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}/messages",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"msg_demo_build2\",\n  \"role\": \"user\",\n  \"content\": \"Investigate unit test failure\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 04 - create task",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}/tasks",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"tsk_demo_build2\",\n  \"title\": \"Run regression tests\",\n  \"status\": \"pending\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 05 - complete task",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}/tasks/{{demoTaskId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"completed\",\n  \"result\": \"PASS\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 06 - read composed session",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}?include=project,messages,tasks"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 07 - GitHub composite",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}/context"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 08 - delete message",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}/messages/{{demoMessageId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 09 - delete task",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}/tasks/{{demoTaskId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 10 - delete session",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions/{{demoSessionId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 lifecycle 11 - delete project",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/projects/{{demoProjectId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 error - 415 incorrect write media",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "text/plain"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"projectId\":\"prj_ai\",\"title\":\"Should fail\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 415\", () => pm.response.to.have.status(415));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 error - 422 missing title",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"projectId\": \"prj_ai\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Build 2 collection - zero matches",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/sessions?status=archived&projectId=prj_web&limit=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI - list providers (no secret)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/runtime",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "runtime"
+          ]
+        }
+      }
+    },
+    {
+      "name": "AI - OpenAI chat (requires OPENAI_API_KEY)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101",
+            "chat"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Explain the last error in this project\",\n  \"provider\": \"openai\",\n  \"model\": \"gpt-4.1-mini\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "AI - Anthropic chat (requires ANTHROPIC_API_KEY)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101",
+            "chat"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Explain how PostgreSQL indexes work\",\n  \"provider\": \"anthropic\",\n  \"model\": \"claude-haiku-5-5\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "AI - Ollama chat (requires local model)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101",
+            "chat"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Suggest unit tests for a PHP API\",\n  \"provider\": \"ollama\",\n  \"model\": \"llama3.2\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "AI - invalid provider (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101",
+            "chat"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Hello\",\n  \"provider\": \"unknown\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "AI - empty message (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sessions/ses_101/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sessions",
+            "ses_101",
+            "chat"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"\",\n  \"provider\": \"openai\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
     }
   ]
 }

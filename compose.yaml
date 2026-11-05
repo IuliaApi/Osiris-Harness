@@ -7,6 +7,16 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgres://osiris_dev:osiris_dev_local_only@db:5432/${OSIRIS_DATABASE_NAME:-osiris_dev}
+      OSIRIS_GITHUB_MODE: ${OSIRIS_GITHUB_MODE:-online}
+      # Secrets remain inside the API container, never in browser responses.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OSIRIS_OPENAI_MODEL: ${OSIRIS_OPENAI_MODEL:-gpt-4.1-mini}
+      OSIRIS_ANTHROPIC_MODEL: ${OSIRIS_ANTHROPIC_MODEL:-claude-haiku-5-5}
+      OSIRIS_OLLAMA_MODEL: ${OSIRIS_OLLAMA_MODEL:-llama3.2}
+      OSIRIS_OLLAMA_ENABLED: ${OSIRIS_OLLAMA_ENABLED:-1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${OSIRIS_PORT:-8080}:8080"
     depends_on:
@@ -18,7 +28,6 @@ services:
     init: true
   adminer:
     image: adminer:5-standalone
-    profiles: ["tools"]
     environment:
       ADMINER_DEFAULT_SERVER: db
     ports:
