@@ -7,39 +7,53 @@
   <title>Osiris — workspace</title>
   <meta name="referrer" content="same-origin">
   <link rel="stylesheet" href="/assets/workspace.css">
+  <link rel="stylesheet" href="/assets/desktop-panel.css">
   <script type="module" src="/assets/workspace.js"></script>
 </head>
 <body>
 <div id="login-screen" class="login-screen hidden">
-  <form id="login-form" class="login-card">
-    <div class="login-word">osiris</div>
-    <h1>Enter your workspace</h1>
-    <p>One simple place for your coding sessions and AI conversations.</p>
-    <label class="label-os" for="login-name">Username</label>
-    <input id="login-name" name="username" class="input-os" autocomplete="username" required>
-    <label class="label-os mt-3" for="login-password">Password</label>
-    <input id="login-password" name="password" class="input-os" type="password" autocomplete="current-password" required>
-    <button class="btn-os primary w-100 mt-3" type="submit">Sign in</button>
-    <div class="notice mt-3" role="alert" id="login-error"></div>
+  <form id="auth-form" method="post" class="login-card">
+    <h1 class="login-word">osiris</h1>
+    <input id="auth-name" name="username" class="input-os" aria-label="Username" placeholder="Username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="100" required>
+    <input id="auth-password" name="password" class="input-os" aria-label="Password" placeholder="Password" type="password" autocomplete="current-password" required>
+    <ul id="password-rules" class="password-checks" aria-label="Password requirements" hidden>
+      <li><label><input id="password-min" type="checkbox" disabled> At least 12 bytes</label></li>
+      <li><label><input id="password-max" type="checkbox" disabled> At most 72 bytes</label></li>
+    </ul>
+    <button id="auth-submit" class="btn-os primary" type="submit">Sign in</button>
+    <div class="notice" role="alert" id="auth-error"></div>
+    <a id="auth-switch" href="/register">Create account</a>
   </form>
 </div>
 <div id="app" class="app hidden">
   <aside class="sidebar">
     <div class="brand">osiris</div>
-    <div class="nav-column" aria-label="Main navigation"><div class="small-title">Workspace</div>
+    <nav class="nav-column" aria-label="Main navigation"><div class="small-title">Workspace</div>
       <button type="button" class="nav-link-os" data-route="/dashboard">Dashboard</button>
       <button type="button" class="nav-link-os" data-route="/workspace">Sessions</button>
       <button type="button" class="nav-link-os" data-route="/chat">Chat</button>
       <button type="button" class="nav-link-os" data-route="/manage">Manage</button>
       <button type="button" class="nav-link-os" data-route="/api-checks">API Checks</button>
-    </div>
+    </nav>
     <div class="sidebar-bottom"><div class="userline"><span class="avatar" id="avatar">U</span><span id="username">Local user</span></div><button class="subtle-link" id="logout">Log out</button></div>
   </aside>
   <div class="main">
-    <header class="topbar"><div class="breadcrumb-os">Workspace / <strong id="page-label">Dashboard</strong></div><div class="top-end"><span><span class="status-dot off" id="api-dot"></span><span id="api-state">Checking connection</span></span></div></header>
+    <header class="topbar">
+      <div class="breadcrumb-os">Workspace / <strong id="page-label">Dashboard</strong></div>
+      <div class="top-end">
+        <button class="btn-os command-trigger" id="command-trigger" type="button" aria-haspopup="dialog" aria-controls="command-menu" aria-keyshortcuts="Control+K Meta+K">Commands <kbd aria-hidden="true" id="command-shortcut">Ctrl K</kbd></button>
+        <span class="connection"><span class="status-dot off" id="api-dot"></span><span id="api-state">Checking connection</span></span>
+      </div>
+    </header>
+    <dialog id="command-menu" class="command-menu" aria-labelledby="command-title">
+      <div class="command-head"><h2 id="command-title">Commands</h2><button type="button" class="subtle-link" id="command-close" aria-label="Close commands">Close</button></div>
+      <input id="command-search" class="input-os" type="text" aria-label="Search commands" aria-controls="command-list" autocomplete="off" spellcheck="false" placeholder="Search commands" autofocus>
+      <ul id="command-list" class="command-list" aria-label="Matching commands"></ul>
+      <p id="command-empty" class="hint" role="status" hidden>No matching commands.</p>
+    </dialog>
     <div class="page">
       <section id="dashboard-view" class="hidden">
-        <div class="page-head"><div><div class="eyebrow">Overview</div><h1 class="page-title" id="greeting">Dashboard</h1><p class="page-sub">Projects and sessions available to your account.</p></div><button class="btn-os primary hidden" data-action="new-session">New session</button></div>
+        <div class="page-head"><div><div class="eyebrow">Overview</div><h1 class="page-title" id="greeting">Dashboard</h1><p class="page-sub">Projects and sessions available to your account.</p></div><div class="d-flex flex-wrap gap-2"><button class="btn-os primary hidden" data-action="new-chat">New chat</button><button class="btn-os hidden" data-action="new-session">New session</button></div></div>
         <div class="metric-grid"><div class="metric"><label>Projects</label><strong id="count-projects">—</strong></div><div class="metric"><label>Sessions</label><strong id="count-sessions">—</strong></div><div class="metric"><label>Active sessions</label><strong id="count-active">—</strong></div></div>
         <div class="dashboard-grid">
           <div class="panel"><div class="panel-head"><h2>Recent sessions</h2><button class="subtle-link" data-route="/workspace">View all</button></div><div id="recent-sessions" class="empty">Loading sessions…</div></div>
@@ -53,12 +67,64 @@
         <div class="panel"><div class="session-item head"><span>Session</span><span>Project</span><span>Status</span><span></span></div><div id="session-results" class="empty">Loading sessions…</div><div class="pagination-os"><span id="page-info">—</span><div><button id="previous-page" class="btn-os" type="button">Previous</button><button id="next-page" class="btn-os" type="button">Next</button></div></div></div>
       </section>
       <section id="chat-view" class="hidden">
-        <div class="page-head"><div><div class="eyebrow">Conversations</div><h1 class="page-title">Chat</h1><p class="page-sub">Select a session and continue where you left off.</p></div><button class="btn-os" data-action="new-session">New session</button></div>
-        <div class="chat-layout"><aside class="chat-sidebar"><div class="chat-side-head"><span>Sessions</span><button class="subtle-link" id="refresh-sessions" title="Refresh sessions">Refresh</button></div><div id="chat-session-list"></div></aside>
-          <div class="chat-main"><div class="chat-header"><div><h2 class="chat-heading" id="chat-title">Select a session</h2><small id="chat-project">Choose an existing session to start chatting</small></div><div class="d-flex align-items-center gap-2"><span class="badge-os" id="chat-status">—</span><button class="subtle-link hidden" id="archive-session">Archive</button><button class="btn-os hidden" id="delete-session" type="button">Delete session</button></div></div>
-            <div class="chat-history" id="chat-history"><div class="empty">Select a session on the left to see your messages.</div></div>
-            <form id="chat-form" class="chat-composer"><label class="label-os" for="message-text">Message</label><textarea class="input-os" id="message-text" placeholder="Ask Osiris about your code..." maxlength="6000" required disabled></textarea><div class="composer-footer"><span class="hint" id="chat-hint">Choose an active session to send a message.</span><button class="btn-os primary" type="submit" id="send-message" disabled>Send message</button></div></form>
-          </div></div>
+        <div class="chat-layout">
+          <aside class="chat-sidebar" aria-labelledby="threads-heading">
+            <div class="thread-tools">
+              <div class="chat-side-head"><h1 id="threads-heading">Threads</h1><button type="button" class="subtle-link" id="refresh-sessions" aria-label="Refresh sessions">Refresh</button></div>
+              <div class="thread-create"><button type="button" class="btn-os primary hidden" data-action="new-chat">New chat</button><button type="button" class="btn-os hidden" data-action="new-session">New session</button></div>
+              <input id="thread-search" type="search" class="input-os" aria-label="Search threads" placeholder="Search threads" autocomplete="off">
+            </div>
+            <div id="chat-session-list"></div>
+          </aside>
+          <div class="chat-main">
+            <header class="chat-header">
+              <div class="chat-identity"><div class="terminal-brand">osiris / terminal</div><h2 class="chat-heading" id="chat-title">Select a session</h2><small id="chat-project"></small></div>
+              <div class="thread-actions"><span class="badge-os" id="chat-status"></span><button class="subtle-link hidden" id="rename-thread" type="button">Rename thread</button><button class="subtle-link hidden" id="archive-session" type="button">Archive</button><button class="subtle-link hidden" id="delete-session" type="button">Delete session</button></div>
+            </header>
+            <div class="chat-history" id="terminal-scroll" role="region" aria-label="Terminal transcript" tabindex="0">
+              <div id="chat-history">Choose a thread to see its messages.</div>
+              <div id="agent-output"></div>
+            </div>
+            <div id="agent-controls" class="agent-controls" hidden>
+              <div><span id="agent-state" role="status"></span> <span id="agent-clock" aria-hidden="true" hidden></span></div>
+              <div class="thread-actions">
+                <button id="agent-refresh" type="button" class="btn-os" hidden>Refresh run</button>
+                <button id="agent-continue" type="button" class="btn-os" hidden>Continue</button>
+                <button id="agent-cancel" type="button" class="btn-os danger" hidden>Cancel run</button>
+              </div>
+            </div>
+            <dialog id="side-questions" class="command-menu" aria-labelledby="side-title">
+              <div class="command-head"><h2 id="side-title">Side questions</h2><button id="side-close" type="button" class="subtle-link">Close</button></div>
+              <p class="hint">Uses this thread as context. Side answers stay out of the conversation.</p>
+              <label for="side-history">Recent questions</label><select id="side-history" class="input-os"></select>
+              <div id="side-answer" class="message-text"></div>
+              <form id="side-form" class="fields">
+                <label>Question<textarea id="side-question" class="input-os" rows="2" maxlength="6000" required></textarea></label>
+                <div class="thread-actions"><button id="side-ask" class="btn-os primary" type="submit">Ask separately</button><button id="side-follow" class="btn-os" type="submit">Follow up on selected answer</button></div>
+              </form>
+              <p id="side-status" class="hint" role="status"></p>
+            </dialog>
+            <dialog id="thread-picker" class="command-menu" aria-labelledby="picker-title">
+              <div class="command-head"><h2 id="picker-title"></h2><button type="button" class="subtle-link" id="picker-close" aria-label="Close picker">Close</button></div>
+              <input id="picker-search" type="search" class="input-os" aria-label="Search models" aria-controls="picker-list" placeholder="Search by model or provider" autocomplete="off" spellcheck="false">
+              <p id="picker-status" class="hint" role="status"></p>
+              <div id="picker-list" class="command-list"></div>
+            </dialog>
+            <form id="chat-form" class="chat-composer" novalidate>
+              <ul id="slash-suggestions" role="listbox" aria-label="Slash commands" hidden></ul>
+              <div class="prompt-line">
+                <span class="prompt-sign" aria-hidden="true">❯</span>
+                <textarea id="message-text" aria-label="Message" aria-describedby="chat-hint" aria-controls="slash-suggestions" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ask Osiris, or type / for commands" rows="1" maxlength="6000" required disabled></textarea>
+                <button class="btn-os primary" type="submit" id="send-message" aria-label="Send message" disabled>Run</button>
+              </div>
+              <div class="composer-footer">
+                <button id="thread-permissions" class="subtle-link" type="button" aria-haspopup="dialog" aria-controls="thread-picker" hidden>Permissions</button>
+                <span class="tools-indicator" id="tools-indicator"></span>
+              </div>
+              <p class="hint" role="status" id="chat-hint">Open a thread to use the terminal.</p>
+            </form>
+          </div>
+        </div>
       </section>
 
       <section id="manage-view" class="hidden">

@@ -15,14 +15,19 @@ Omit `-Browser` to run the same service checks without the Chromium walkthrough.
 | Check | What to look for |
 | --- | --- |
 | Resource discovery and collections | Start at `/api`, follow the returned project, session and task links, and compare visible rows to SQL. The unpaged `/sessions` response is an array. Page links preserve filters, ordering and limits. |
+| New account and private chat | Register a member, start a chat with no projects, then sign out and back in. The chat persists without creating a project. Other accounts cannot read its messages, and registration cannot claim an existing username or assign a privileged role. |
 | Authentication and isolation | A signed-out caller receives no protected data. A second owner cannot read or change another owner's private session, including nested resources or context. A viewer cannot write a public project. Missing or mismatched CSRF tokens leave data unchanged. |
 | Representations | Compare parsed JSON, XML and YAML values. Vary the request and response formats independently for resource creation and updates. Check unsupported media, invalid bodies and invalid queries against the [API contract](openapi.yaml). |
 | Concurrent updates and deletion | Two writers using the same task version must get one successful update and one `412`. Normal deletion refuses a session with children. Failure partway through an explicit content deletion must roll back both the rows and the audit entries. |
 | Tools and chat | Request a virtual workspace operation, then approve and execute it. Premature or repeated execution must not change the file. Check credential isolation and dispatch limits. A synthetic Ollama response exercises persistence of a pair of chat turns, including rollback on failure. |
+| Agent continuation | The Ollama protocol fixture requests a write, waits for a reviewed apply, reads the stored value and uses it in its answer. Replaying an old step or continuing too early must not consume another budget unit. A newer human edit must survive a stale proposal. Inspect the tool trace on the saved assistant message, including after starting another turn. |
 | Project context | The service combines PostgreSQL data with public GitHub metadata. Test fixtures supply success, timeout, malformed, quota and failure responses. When an upstream fails, local data remains available and the response explains the external status. |
+| Chat workbench | Type `/`, filter commands, and use `/model` to search the provider's inventory. Give two threads different permission modes and switch back: drafts and modes stay separate. With Ask, reload a pending proposal and deny it, then allow a fresh proposal inline and check the resulting model reply. |
 | Browser | Sign in, create a project and session, append a message, transition a task and approve a virtual file write. Exercise [API Checks](api-checks.md), sign out and check the recovery page for an unknown route. |
 
 The [HTTP and SQL assertions](../scripts/test-workspace-api.py) and [browser walkthrough](../scripts/test-workspace-ui.py) run inside the test network. Use the PowerShell runner to supply their databases, accounts and environment. The [integration workflow](../.github/workflows/workspace-integration.yml) runs the browser-enabled command and retains its transcript.
+
+On an interactive Windows desktop, run `.\desktop.ps1 -InstallOnly`, then `.\.local\desktop-venv\Scripts\python.exe -m unittest discover -s desktop`. The protocol tests cover origin restrictions, expired codes, revocation and stale frames. The native test creates its own two-control window and checks that a click in the capture sends text only to the intended control, including on a scaled display.
 
 ## Verify operator startup and persistence
 

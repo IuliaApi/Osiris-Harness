@@ -18,6 +18,8 @@ from psycopg import sql
 PASSWORD = os.environ['QA_PASSWORD']
 PROMPT = 'QA-PROMPT-never-log-b628a9'
 KEY = 'qa-no-provider-key-never-log-c95c37'
+POLICY_PROMPT = 'Exercise scoped file permissions'
+THREAD_CASE = 'QA-thread-command: '
 LOG_EXPECTATIONS = Path('/tmp/workspace-api-log-expectations.json')
 JSON, XML, YAML = ('application/' + fmt for fmt in ('json', 'xml', 'yaml'))
 correlations = {}
@@ -96,13 +98,18 @@ class Client:
                 correlations[rid] = (method, urlsplit(path).path, code)
         return Reply(code, hs, decoded, rid)
 
-    def login(self, name, role):
-        result = self.req('POST','/auth/login',200,{'username':name,'password':PASSWORD})
+    def login(self, name, role, password=PASSWORD):
+        result = self.req('POST','/auth/login',200,{'username':name,'password':password})
+        return self.accept_session(result, name, role)
+
+    def accept_session(self, result, name, role):
         value = result.data
+        assert set(value) == {'user','csrfToken'}
         assert value['user']['username'] == name and value['user']['role'] == role
         assert set(value['user']) == {'id','username','role'}
         cookie = SimpleCookie(result.headers['set-cookie'])['osiris_session']
-        assert cookie['httponly'] and cookie['samesite'].lower() in ('lax','strict') and cookie['path'] == '/'
+        assert cookie['httponly'] and cookie['samesite'].lower() == 'strict'
+        assert cookie['path'] == '/' and not cookie['domain']
         self.cookie = 'osiris_session=' + cookie.value
         self.csrf = value['csrfToken']
         assert self.csrf and self.csrf != cookie.value
@@ -130,7 +137,8 @@ def scope_query(user_id):
     return [r[0] for r in rows('''SELECT json_build_object('id',s.id,'projectId',s.project_id,
         'title',s.title,'status',s.status,'createdAt',to_char(s.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
         'updatedAt',to_char(s.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
-        FROM sessions s JOIN projects p ON p.id=s.project_id WHERE p.user_id=%s ORDER BY s.created_at,s.id''', user_id)]
+        FROM sessions s LEFT JOIN projects p ON p.id=s.project_id
+        WHERE p.user_id=%s OR s.owner_id=%s ORDER BY s.created_at,s.id''', user_id, user_id)]
 
 
 def fields(item):
@@ -148,13 +156,14 @@ def expire(client, name):
 
 def pages_and_identity():
     anon = Client()
-    for path in ('/','/login','/dashboard','/workspace','/chat','/manage','/api-checks'):
+    for path in ('/','/login','/register','/dashboard','/workspace','/chat','/manage','/api-checks'):
         page = anon.req('GET',path,accept='text/html',html=True).data
         assert '<input' in page and '<button' in page and 'src="/assets/workspace.js"' in page, path
     assert 'Page not found' in anon.req('GET','/dashboard/no-such-page',404,accept='text/html',html=True).data
     anon.req('GET','/qa-no-such-route',404)
     for path in ('/auth/me','/api','/api/runtime','/projects','/sessions','/sessions/ses_101',
-                 '/projects/prj_ai/sessions','/sessions/ses_101/context','/sessions/ses_101/tool-runs'):
+                 '/projects/prj_ai/sessions','/sessions/ses_101/context','/sessions/ses_101/tool-runs','/sessions/ses_101/permissions',
+                 '/sessions/ses_101/goal','/sessions/ses_101/asides'):
         anon.req('GET',path,401)
     anon.req('POST','/sessions',401,{'projectId':'prj_ai','title':'No'})
     anon.req('GET','/sessions',401,headers={'Cookie':'osiris_session=invalid','X-User-Role':'admin'})
@@ -166,6 +175,8 @@ def pages_and_identity():
     admin = Client().login('qa_admin','admin')
     empty = Client('empty:8080').login('qa_empty','member')
     assert empty.req('GET','/sessions').data == []
+    catalog = member.follow(member.req('GET','/api').data,'models').data['providers']
+    assert {p['id']: (p['status'],p['models']) for p in catalog} == {id_: ('not_configured',[]) for id_ in ('ollama','openai','anthropic')}
     for client, uid in [(a,'usr_demo_one'),(b,'usr_demo_two')]:
         expected = scope_query(uid)
         actual = client.req('GET','/sessions').data
@@ -196,6 +207,64 @@ def pages_and_identity():
     assert a.req('GET','/auth/me').data['user']['id'] == 'usr_demo_one'
     passed('public pages, password hashing, session invalidation and account-scoped session lists vs SQL')
     return a,b,member,viewer,admin
+
+
+def registration():
+    anon, member = Client(), Client()
+    path = '/auth/register'
+    name = 'Qa-Self1_'.ljust(100, 'a')
+    # Use both UTF-8 byte limits, not just strings with 12 or 72 characters.
+    short = PASSWORD[:10] + 'é'
+    long = PASSWORD.ljust(70, '-') + 'é'
+    sensitive.update((short, long, json.dumps(short)[1:-1], json.dumps(long)[1:-1]))
+    credentials = {'username':name, 'password':short}
+    db.execute("INSERT INTO users(id,username,email) VALUES ('usr_qa_reserved',%s,'qa-reserved@example.test')",
+               (name.lower(),))
+    created = anon.req('POST',path,201,credentials)
+    member.accept_session(created, name, 'member')
+    uid = created.data['user']['id']
+    assert created.headers['location'] == '/auth/me'
+    [(stored_id, role, hashed)] = rows('SELECT id,role,password_hash FROM users WHERE username=%s',name)
+    assert (stored_id, role) == (uid, 'member') and hashed.startswith(('$argon2','$2')) and short not in hashed
+
+    def account_state():
+        return rows('SELECT id,username,email,password_hash,role FROM users ORDER BY id'), rows(
+            'SELECT token_hash,user_id,expires_at FROM auth_sessions ORDER BY token_hash')
+
+    before = account_state()
+    invalid = {'username':'qa_invalid', 'password':PASSWORD}
+    for body in (
+        {'username':name}, {'password':short}, {**invalid,'username':''}, {**invalid,'username':name+'a'},
+        {**invalid,'username':'bad name'}, {**invalid,'username':'café'}, {**invalid,'password':123},
+        {**invalid,'password':short[:-1]+'x'}, {**invalid,'password':long+'x'},
+        {**invalid,'role':'admin'}, {**invalid,'id':'usr_demo_one'},
+    ):
+        assert 'set-cookie' not in anon.req('POST',path,422,body).headers
+    # A NUL is rejected by the shared wire-format decoder before credential validation.
+    assert 'set-cookie' not in anon.req('POST',path,400,{**invalid,'password':PASSWORD+'\0'}).headers
+    assert 'set-cookie' not in anon.req('POST',path,403,invalid,headers={'Origin':'https://example.test'}).headers
+    for taken in (name, name.lower(), 'demo_one'):
+        # Use a different password from the owner of each enabled account.
+        password = long if taken == 'demo_one' else PASSWORD
+        assert 'set-cookie' not in anon.req('POST',path,409,{'username':taken,'password':password}).headers
+    assert account_state() == before, 'Rejected registration changed accounts or sessions'
+    anon.req('GET','/auth/me',401)
+
+    page = member.req('GET','/projects').data
+    assert page['items'] == [] and page['page']['total'] == 0
+    assert member.req('GET','/sessions').data == []
+    for private in ('/projects/prj_ai','/projects/prj_web/sessions','/sessions/ses_101'):
+        member.req('GET',private,404)
+    member.req('POST','/api/maintenance/prune',403)
+    member.req('POST','/auth/logout',403,headers={'X-CSRF-Token':None})
+    member.req('POST','/auth/logout',204)
+    member.req('GET','/auth/me',401)
+    again = Client().login(name,'member',short)
+    assert again.req('GET','/auth/me').data['user']['id'] == uid and again.cookie != member.cookie
+
+    maximum = anon.req('POST',path,201,{'username':'Q','password':long},accept=XML)
+    anon.accept_session(maximum,'Q','member')
+    passed('public member registration, byte limits, disabled/provisioned/duplicate username protection, persisted login and private project isolation')
 
 
 def collections(a):
@@ -251,8 +320,16 @@ def crud_and_formats(a,b,member,viewer,admin):
     task = a.follow(s,'createTask','POST',status=201,data={'id':'tsk_qa','title':'Concurrent task','status':'pending'})
     assert task.headers['location'] == '/sessions/ses_qa/tasks/tsk_qa'
     a.req('POST',create['href'],409,{'id':'ses_qa','title':'duplicate'})
+    linked = a.follow(root,'createSession','POST',status=201,data={'projectId':'prj_qa','title':'Linked at creation'}).data
+    assert a.follow(linked,'project').data['id'] == linked['projectId'] == 'prj_qa'
+    assert rows('SELECT project_id,owner_id FROM sessions WHERE id=%s',linked['id']) == [('prj_qa',None)]
+    a.follow(linked,'delete','DELETE',status=204)
+    member.req('POST','/sessions',404,{'projectId':'prj_qa','title':'Not my project'})
+    for wrong_parent in ('prj_web',None):
+        a.req('POST',create['href'],422,{'projectId':wrong_parent,'title':'Wrong parent'})
     assert one("SELECT count(*) FROM sessions WHERE id='ses_qa' AND title='Markup & quotes'") == 1
     a.req('PATCH','/projects/prj_qa',422,{'userId':'usr_demo_two'})
+    a.req('PATCH','/sessions/ses_qa',422,{'projectId':None})
     a.req('PATCH','/sessions/ses_qa',422,{'projectId':'prj_web'})
     a.req('PATCH',task.headers['location'],422,{'sessionId':'ses_201'},headers=versions(task.data))
     assert one("SELECT user_id FROM projects WHERE id='prj_qa'") == 'usr_demo_one'
@@ -292,20 +369,43 @@ def crud_and_formats(a,b,member,viewer,admin):
     a.follow(members_doc,'setMember','POST',data={'userId':'usr_qa_member','role':'member'})
     [membership] = a.req('GET',members).data['items']
     assert fields(membership) == {'userId':'usr_qa_member','role':'member'}
+    assert a.follow(s,'permissions').data == member.follow(s,'permissions').data == {'mode':'ask'}
+    for invalid in ({}, {'mode':'always'}, {'mode':True}, {'mode':'yolo','userId':'usr_demo_one'}):
+        member.follow(s,'setPermissions','PUT',status=422,data=invalid)
+    member.follow(s,'setPermissions','PUT',status=403,data={'mode':'yolo'},headers={'X-CSRF-Token':None})
+    permissions = s['_links']['permissions']['href']
+    member.req('GET',permissions+'?all=1',400)
+    member.req('PUT',permissions+'?all=1',400,{'mode':'yolo'})
+    assert member.req('PATCH',permissions,405,{}).headers['allow'] == 'GET, PUT'
+    assert member.follow(s,'setPermissions','PUT',data={'mode':'yolo'}).data == {'mode':'yolo'}
+    assert member.follow(s,'permissions').data == {'mode':'yolo'} and a.follow(s,'permissions').data == {'mode':'ask'}
+    b.follow(s,'permissions',status=404)
+    b.follow(s,'setPermissions','PUT',status=404,data={'mode':'allow'})
     assert member.req('GET','/sessions/ses_qa').data['id'] == 'ses_qa'
     member.req('PATCH','/sessions/ses_qa',200,{'title':'Shared session'})
     member.req('POST',members,403,{'userId':'usr_demo_two','role':'member'})
     member.req('DELETE','/projects/prj_qa',403)
     a.follow(members_doc,'setMember','POST',data={'userId':'usr_qa_member','role':'viewer'})
-    assert 'update' not in member.req('GET','/sessions/ses_qa').data['_links']
     member.req('PATCH','/sessions/ses_qa',403,{'title':'denied after downgrade'})
+    read_only = member.req('GET','/sessions/ses_qa').data
+    assert not {'update','setPermissions','startAgent'} & read_only['_links'].keys()
+    assert member.follow(read_only,'permissions').data == {'mode':'yolo'}
+    member.follow(s,'setPermissions','PUT',status=403,data={'mode':'ask'})
+    member.follow(s,'startAgent','POST',status=403,data={'message':'No tools for viewers','tools':True})
     a.follow(membership,'delete','DELETE',status=204)
     member.req('GET','/sessions/ses_qa',404)
     a.req('PATCH','/projects/prj_qa',200,{'visibility':'public'})
     public = viewer.req('GET','/sessions/ses_qa').data
     assert not set(public['_links']).intersection({'update','delete','chat','createTask','createMessage'})
+    viewer.req('POST','/sessions',403,{'projectId':'prj_qa','title':'Read only'})
     viewer.req('PATCH','/sessions/ses_qa',403,{'title':'no'})
     viewer.req('POST','/sessions/ses_qa/chat',403,{'message':'no'})
+    for rel in ('setGoal','askAside'):
+        assert rel not in public['_links']
+    assert viewer.follow(public,'goal').data == {'goal':None,'status':'none'}
+    assert viewer.follow(public,'asides').data == {'items':[]}
+    viewer.follow(s,'setGoal','PUT',status=403,data={'goal':'read only'})
+    viewer.follow(s,'askAside','POST',status=403,data={'message':'read only','provider':'ollama','model':'qa:agent'})
     a.req('PATCH','/projects/prj_qa',200,{'visibility':'private'})
     viewer.req('GET','/sessions/ses_qa',404)
     assert one("SELECT title FROM sessions WHERE id='ses_qa'") == 'Shared session'
@@ -471,10 +571,88 @@ def chat(a,b,viewer):
     a.follow(saved,'deleteCredential','DELETE',status=204)
     assert not provider(a)['configured'] and one('SELECT count(*) FROM provider_credentials') == 0
     archived = a.req('PATCH','/sessions/ses_qa',data={'status':'archived'}).data
-    assert 'chat' not in archived['_links']
+    assert not {'chat','setGoal','askAside'} & archived['_links'].keys()
+    assert a.req('PUT','/sessions/ses_qa/goal',409,{'goal':'archived'}).data['code'] == 'invalid_session_state'
+    assert a.req('POST','/sessions/ses_qa/asides',409,payload).data['code'] == 'invalid_session_state'
     a.req('POST',path,409,payload)
     a.req('PATCH','/sessions/ses_qa',data={'status':'active'})
     passed('actor-specific encrypted key CRUD, missing-key/archived/offline failures, competing last budget unit, zero saved chat turns')
+
+
+def standalone_sessions(member, other, viewer, admin):
+    root = member.req('GET','/api').data
+    assert member.follow(root,'projects').data['page']['total'] == 0
+    projects_before = rows('SELECT id FROM projects ORDER BY id')
+    create = {'href':'/sessions','method':'POST'}
+    assert root['_links']['createSession'] == create
+    assert 'createSession' not in viewer.req('GET','/api').data['_links']
+    assert 'create' not in viewer.req('GET','/sessions?limit=1').data['_links']
+    viewer.req('POST','/sessions',403,{'title':'Viewer cannot create'})
+    member.follow(root,'createSession','POST',status=403,data={'title':'Missing CSRF'},headers={'X-CSRF-Token':None})
+    member.follow(root,'createSession','POST',status=422,data={'title':'Not mine','ownerId':'usr_demo_two'})
+
+    personal = member.follow(root,'createSession','POST',status=201,data={'title':'Personal chat'}).data
+    sid = personal['id']
+    path = personal['_links']['self']['href']
+    assert path == '/sessions/'+sid and personal['projectId'] is None and 'project' not in personal['_links']
+    assert rows('SELECT project_id,owner_id FROM sessions WHERE id=%s',sid) == [(None,'usr_qa_member')]
+    member.follow(personal,'update','PATCH',data={'title':'Private conversation'})
+    for fields_to_move in ({'projectId':'prj_qa'},{'ownerId':'usr_demo_two'}):
+        member.req('PATCH',path,422,fields_to_move)
+    [owned] = member.follow(root,'sessions').data
+    assert owned['id'] == sid and owned['title'] == 'Private conversation' and owned['projectId'] is None
+    page = member.req('GET','/sessions?view=summary&include=project').data
+    [summary] = page['items']
+    assert page['page']['total'] == 1 and page['_links']['create'] == create
+    assert summary['id'] == sid and 'updatedAt' not in summary and 'project' not in summary['_links']
+    assert summary['projectId'] is None and summary['project'] is None
+    assert member.req('GET','/sessions?projectId=prj_qa').data['page']['total'] == 0
+    second = member.follow(page,'create','POST',status=201,data={'title':'Also private','projectId':None},accept=XML).data
+    assert second['id'] != sid and second['projectId'] is None and 'project' not in second['_links']
+    assert member.follow(personal,'permissions').data == {'mode':'ask'}
+    assert member.follow(second,'setPermissions','PUT',data={'mode':'allow'}).data == {'mode':'allow'}
+    assert member.follow(personal,'permissions').data == {'mode':'ask'}
+    assert rows('SELECT id FROM projects ORDER BY id') == projects_before
+    assert member.follow(root,'projects').data['items'] == []
+
+    msg = member.follow(personal,'createMessage','POST',status=201,data={'role':'user','content':'A private note'}).data
+    task = member.follow(personal,'createTask','POST',status=201,data={'title':'A private task'}).data
+    task = member.follow(task,'update','PATCH',data={'status':'running'},headers=versions(task)).data
+    run = member.follow(personal,'requestTool','POST',status=201,data={'operation':'workspace.read','path':'notes.txt'}).data
+    assert member.follow(msg,'self').data == msg and member.follow(task,'self').data == task
+    assert member.follow(run,'self').data == run
+    member.req('GET',second['_links']['self']['href']+'/messages/'+msg['id'],404)
+    member.follow(second,'delete','DELETE',status=204)
+    assert not rows('SELECT mode FROM chat_permissions WHERE session_id=%s',second['id'])
+
+    for media in (JSON,XML,YAML):
+        detail = member.req('GET',path+'?include=project,messages,tasks',accept=media)
+        assert detail.headers['content-type'].split(';')[0] == media
+        assert detail.data['project'] is None and detail.data['projectId'] is None
+        assert detail.data['messages'] == [msg] and detail.data['tasks'] == [task]
+        context = member.follow(personal,'context',accept=media).data
+        assert context['project'] is None and context['session'] == owned
+        assert context['messages']['items'] == [msg] and context['tasks']['items'] == [task]
+        assert context['external']['status'] == 'not_configured' and context['external']['repository'] is None
+
+    for outsider in (other,viewer,admin):
+        assert sid not in {item['id'] for item in outsider.req('GET','/sessions').data}
+        assert outsider.req('GET','/sessions?q=Private%20conversation&include=project').data['page']['total'] == 0
+        for obj,rel in [(personal,'self'),(personal,'messages'),(personal,'tasks'),(personal,'toolRuns'),
+                        (personal,'context'),(msg,'self'),(task,'self'),(run,'self')]:
+            outsider.follow(obj,rel,status=404)
+        outsider.follow(personal,'update','PATCH',status=404,data={'title':'Not mine'})
+        outsider.follow(personal,'delete','DELETE',status=404)
+        outsider.follow(personal,'chat','POST',status=404,data={'message':'Not mine'})
+        outsider.follow(personal,'createMessage','POST',status=404,data={'role':'user','content':'Not mine'})
+        outsider.follow(msg,'delete','DELETE',status=404)
+        outsider.follow(task,'update','PATCH',status=404,data={'status':'failed'},headers=versions(task))
+        outsider.follow(run,'approve','POST',status=404,data={},headers=versions(run))
+
+    member.follow(msg,'delete','DELETE',status=204)
+    assert member.follow(personal,'messages').data['page']['total'] == 0
+    passed('projectless member sessions: root and page creation, persisted ownership, formats, private children and role isolation')
+    return personal
 
 
 def check_migration_replay():
@@ -512,7 +690,7 @@ def rollback_delete(a):
         db.execute('DROP TRIGGER qa_reject_parent ON sessions; DROP FUNCTION qa_abort()')
     deletion = a.follow(full,'delete','DELETE',status=204)
     assert one("SELECT count(*) FROM auth_audit WHERE request_id=%s AND actor_id='usr_demo_one' AND event='sessions.delete'",deletion.rid) == 1
-    for table in ['messages','tasks','workspace_files','tool_runs']:
+    for table in ['messages','tasks','workspace_files','tool_runs','chat_permissions']:
         assert one(sql.SQL("SELECT count(*) FROM {} WHERE session_id='ses_qa'").format(sql.Identifier(table))) == 0
     for path in ['/sessions/ses_qa','/sessions/ses_qa/messages/msg_qa','/sessions/ses_qa/tasks/tsk_qa']:
         a.req('GET',path,404)
@@ -528,6 +706,18 @@ def login_limit():
     limited = anon.req('POST','/auth/login',429,{'username':'qa_limit','password':'incorrect'})
     assert int(limited.headers['retry-after']) > 0
     passed('bounded authentication attempts and Retry-After')
+
+
+def registration_limit():
+    # This API uses a separate database; exhausting its IP bucket cannot block browser signup.
+    anon = Client('empty:8080')
+    for attempt in range(20):
+        anon.req('POST','/auth/register',422,{'username':f'qa_limit_{attempt}'})
+    credentials = {'username':'qa_limit','password':PASSWORD}
+    limited = anon.req('POST','/auth/register',429,credentials)
+    assert int(limited.headers['retry-after']) > 0 and 'set-cookie' not in limited.headers
+    anon.req('POST','/auth/login',401,credentials)
+    passed('registration IP limit returns Retry-After without creating the account')
 
 
 def check_logs():
@@ -555,11 +745,278 @@ def check_logs():
     passed(f"{len(expected['requests'])} real request-log correlations; no password, key, cookie, CSRF token or prompt in logs")
 
 
-def synthetic_chat(b):
+def agent_workflow(client, outsider, session):
+    payload = {'message':'Use the marker file', 'provider':'ollama', 'model':'qa:agent', 'tools':True}
+    assert client.follow(session,'agent').data == {'run':None}
+    client.follow(session,'startAgent','POST',status=422,data={**payload,'mode':'yolo'})
+    opened = client.follow(session,'startAgent','POST',status=201,data=payload).data
+    client.follow(session,'startAgent','POST',status=409,data=payload)
+    outsider.follow(opened,'self',status=404)
+    outsider.follow(opened,'step','POST',status=404,data={})
+    before = client.req('GET','/api/budget').data['spent']
+    review = client.follow(opened,'step','POST',data={}).data
+    assert review['status'] == 'review'
+    [proposal] = review['events']
+    assert (proposal['name'],proposal['path']) == ('write','marker.txt')
+    assert not rows('SELECT content FROM workspace_files WHERE session_id=%s AND path=%s',session['id'],'marker.txt')
+    client.follow(session,'setPermissions','PUT',data={'mode':'yolo'})
+    client.follow(opened,'step','POST',status=409,data={})  # consumed round URL
+    client.follow(review,'step','POST',status=409,data={})  # no premature apply or dispatch
+    assert client.req('GET','/api/budget').data['spent'] == before + 1
+    assert client.follow(session,'agent').data['run'] == review
+    request = client.follow(proposal,'toolRun').data
+    assert request['id'] == proposal['runId'] and request['status'] == 'requested'
+    outsider.follow(proposal,'toolRun',status=404)
+    approved = client.follow(request,'approve','POST',data={},headers=versions(request)).data
+    client.follow(approved,'execute','POST',data={},headers=versions(approved))
+    read = client.follow(review,'step','POST',data={}).data
+    assert read['status'] == 'ready' and read['events'][0]['output'] == 'Wrote 6 bytes'
+    assert read['events'][1]['name'] == 'read' and 'canyon' in read['events'][1]['output']
+    complete = client.follow(read,'step','POST',data={}).data
+    assert complete['status'] == 'completed' and 'step' not in complete['_links']
+    assert client.req('GET','/api/budget').data['spent'] == before + 3
+    last = next(m for m in client.follow(session,'messages').data['items'] if m.get('agentEvents'))
+    trace = [fields(event) for event in complete['events']]
+    assert last['content'] == 'The stored marker is canyon.' and last['agentEvents'] == trace
+    assert one('SELECT agent_events FROM messages WHERE id=%s',last['id']) == trace
+    second = client.follow(session,'startAgent','POST',status=201,data=payload).data
+    cancelled = client.follow(second,'cancel','POST',data={}).data
+    assert cancelled['status'] == 'cancelled'
+    client.follow(second,'step','POST',status=409,data={})
+    assert client.req('GET','/api/budget').data['spent'] == before + 3
+    assert client.follow(last,'self').data['agentEvents'] == trace
+    client.follow(session,'setPermissions','PUT',data={'mode':'allow'})
+    replacement = client.follow(session,'startAgent','POST',status=201,data=payload).data
+    pending = client.follow(replacement,'step','POST',data={}).data
+    assert pending['status'] == 'review'
+    manual = client.follow(session,'requestTool','POST',status=201,data={'operation':'workspace.write','path':'marker.txt','content':'newer human edit'}).data
+    manual = client.follow(manual,'approve','POST',data={},headers=versions(manual)).data
+    client.follow(manual,'execute','POST',data={},headers=versions(manual))
+    queued = client.follow(pending['events'][0],'toolRun').data
+    queued = client.follow(queued,'approve','POST',data={},headers=versions(queued)).data
+    stale = client.follow(queued,'execute','POST',status=409,data={},headers=versions(queued))
+    assert stale.data['code'] == 'workspace_base_changed'
+    assert one('SELECT content FROM workspace_files WHERE session_id=%s AND path=%s',session['id'],'marker.txt') == 'newer human edit'
+    cancelled = client.follow(pending,'cancel','POST',data={}).data
+    [denied] = cancelled['events']
+    assert denied['output'] == 'Cancelled without applying' and 'runId' not in denied and '_links' not in denied
+    client.follow(queued,'self',status=404)
+    client.follow(queued,'execute','POST',status=404,data={},headers=versions(queued))
+    assert one('SELECT content FROM workspace_files WHERE session_id=%s AND path=%s',session['id'],'marker.txt') == 'newer human edit'
+    passed('native agent: structured Ollama tools, approval barrier, replay protection, real tool results in context, persisted transcript, cancellation and metering')
+
+
+def policy_workflow(client, control, session, handler):
+    payload = {'message':POLICY_PROMPT,'provider':'ollama','model':'qa:agent','tools':True}
+    def start():
+        return client.follow(session,'startAgent','POST',status=201,data=payload).data
+    def assert_applied(event, mode):
+        run = client.follow(event,'toolRun').data
+        assert (run['id'],run['status'],run['version'],run['result']) == (event['runId'],'completed',3,event['output'])
+        assert run['requestedBy'] == run['approvedBy'] == run['executedBy'] == 'usr_qa_member'
+        assert set(run['_links']) == {'self'}
+        assert rows('SELECT event,actor_id FROM auth_audit WHERE target_id=%s ORDER BY id',run['id']) == [
+            (name,'usr_qa_member') for name in ('tool.request','tool.approve.policy.'+mode,'tool.execute.policy.'+mode)]
+
+    # Downgrade while inference is outstanding on another HTTP worker. The
+    # arriving batch must observe Allow, not the YOLO setting at dispatch.
+    control.follow(session,'setPermissions','PUT',data={'mode':'yolo'})
+    handler.entered, handler.release = threading.Event(), threading.Event()
+    turn = start()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(client.follow,turn,'step','POST',data={})
+        try:
+            assert handler.entered.wait(10), 'Permission fixture was not dispatched'
+            control.follow(session,'setPermissions','PUT',data={'mode':'allow'})
+        finally:
+            handler.release.set()
+        mixed = pending.result().data
+    assert mixed['status'] == 'review'
+    create, edit, replace, invalid = mixed['events']
+    assert_applied(create,'allow')
+    assert invalid['output'].startswith('Error:') and 'runId' not in invalid
+    assert rows('SELECT path,content FROM workspace_files WHERE session_id=%s ORDER BY path',session['id']) == [
+        ('draft.txt','one'), ('marker.txt','newer human edit')]
+    reviews = [client.follow(e,'toolRun').data for e in (edit,replace)]
+    assert all(r['status'] == 'requested' and r['version'] == 1 for r in reviews)
+    cancelled = client.follow(mixed,'cancel','POST',data={}).data
+    assert cancelled['events'][0] == create and cancelled['events'][3] == invalid
+    for event, run in zip(cancelled['events'][1:3], reviews):
+        assert event['output'] == 'Cancelled without applying' and 'runId' not in event and '_links' not in event
+        client.follow(run,'approve','POST',status=404,data={},headers=versions(run))
+        assert rows('SELECT event FROM auth_audit WHERE target_id=%s ORDER BY id',run['id']) == [('tool.request',),('tool.cancel',)]
+    assert_applied(create,'allow')
+
+    control.follow(session,'setPermissions','PUT',data={'mode':'yolo'})
+    ready = client.follow(start(),'step','POST',data={}).data
+    assert ready['status'] == 'ready'
+    for event in ready['events'][:3]:
+        assert_applied(event,'yolo')
+    assert ready['events'][3] == invalid
+    assert rows('SELECT path,content FROM workspace_files WHERE session_id=%s ORDER BY path',session['id']) == [
+        ('draft.txt','edited'), ('marker.txt','replaced')]
+    complete = client.follow(ready,'step','POST',data={}).data
+    assert complete['status'] == 'completed' and complete['events'] == ready['events']
+    passed('live policy downgrade, guarded Allow creates, mixed-batch cancellation, YOLO writes and edits, validation and audit attribution')
+
+
+def thread_commands(owner, control, member, handler):
+    session = owner.req('POST','/projects/prj_web/sessions',201,{'title':'Thread command fixture'}).data
+    sid = session['id']
+    none = {'goal':None,'status':'none'}
+    # A full multibyte goal must reach the provider as user data, never as system text.
+    goal = '界' * 1999 + 'Z'
+    sensitive.update((goal, THREAD_CASE))
+    def set_goal(**body):
+        return owner.follow(session,'setGoal','PUT',data=body).data
+    def payload(case):
+        return {'message':THREAD_CASE + case, 'provider':'ollama', 'model':'qa:agent'}
+    def ask(case, **extra):
+        return owner.follow(session,'askAside','POST',data={**payload(case),**extra}).data
+    def context(case):
+        request = handler.thread_requests[THREAD_CASE + case]
+        assert 'tools' not in request
+        system, *history, prompt = request['messages']
+        assert system['role'] == 'system' and goal not in system['content'] and THREAD_CASE not in system['content']
+        assert prompt == {'role':'user','content':THREAD_CASE + case}
+        return [(m['role'],m['content']) for m in history]
+
+    for rel in ('goal','asides'):
+        member.follow(session,rel,status=404)
+    member.follow(session,'setGoal','PUT',status=404,data={'goal':'private'})
+    member.follow(session,'askAside','POST',status=404,data=payload('private'))
+    owner.follow(session,'setGoal','PUT',status=403,data={'goal':'no CSRF'},headers={'X-CSRF-Token':None})
+    owner.follow(session,'askAside','POST',status=403,data=payload('no CSRF'),headers={'X-CSRF-Token':None})
+    for invalid in ({'goal':' '},{'goal':goal+'x'},{'goal':'text','action':'pause'},{'action':'skip'}):
+        owner.follow(session,'setGoal','PUT',status=422,data=invalid)
+    assert owner.follow(session,'setGoal','PUT',status=409,data={'action':'pause'}).data['code'] == 'invalid_goal_state'
+    assert owner.follow(session,'goal').data == none
+    assert set_goal(goal=goal) == control.follow(session,'goal').data == {'goal':goal,'status':'active'}
+    def stored_goal():
+        return rows('SELECT goal,status FROM thread_goals WHERE session_id=%s AND user_id=%s',sid,'usr_demo_two')
+    assert stored_goal() == [(goal,'active')]
+    grant = control.req('POST','/projects/prj_web/members',data={'userId':'usr_qa_member','role':'member'}).data
+    assert member.follow(session,'goal').data == none
+    assert member.follow(session,'setGoal','PUT',data={'goal':'Other actor objective'}).data['status'] == 'active'
+
+    marker = 'Visible main transcript marker'
+    owner.follow(session,'createMessage','POST',status=201,data={'role':'user','content':marker})
+    marker_history = [('user',marker)]
+    before = owner.req('GET','/api/budget').data
+    turn = owner.follow(session,'startAgent','POST',status=201,data={**payload('active main'),'tools':False}).data
+    handler.entered, handler.release = threading.Event(), threading.Event()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(owner.follow,turn,'step','POST',data={})
+        try:
+            assert handler.entered.wait(10), 'Main dispatch did not reach fixture'
+            working = control.follow(session,'agent').data
+            assert working['run']['status'] == 'working'
+            first = ask('first aside')
+            second = ask('independent aside')
+            followup = ask('selected follow-up',replyTo=first['id'])
+            assert context('first aside') == context('independent aside') == marker_history
+            assert context('selected follow-up') == marker_history + [('user',first['question']),('assistant',first['answer'])]
+            assert control.follow(session,'agent').data == working
+            assert [(m['role'],m['content']) for m in control.follow(session,'messages').data['items']] == marker_history
+        finally:
+            handler.release.set()
+        assert pending.result().data['status'] == 'completed'
+    assert context('active main') == marker_history + [('user','Active goal:\n' + goal)]
+    assert first == {'id':first['id'],'question':THREAD_CASE+'first aside','answer':'Answer to '+THREAD_CASE+'first aside','provider':'ollama','model':'qa:agent'}
+    assert control.follow(session,'asides').data == {'items':[followup,second,first]}
+    assert rows('SELECT id,question,answer FROM thread_asides WHERE session_id=%s ORDER BY created_at DESC,id DESC',sid) == [
+        (item['id'],item['question'],item['answer']) for item in (followup,second,first)]
+    assert member.follow(session,'asides').data == {'items':[]}
+    for client, target in ((member,session),(owner,owner.req('GET','/sessions/ses_201').data)):
+        client.follow(target,'askAside','POST',status=404,data={**payload('foreign parent'),'replyTo':first['id']})
+    for extra in ({'tools':True},{'replyTo':None},{'replyTo':'bad'},{'url':'http://other.invalid'}):
+        owner.follow(session,'askAside','POST',status=422,data={**payload('invalid'),**extra})
+    assert set_goal(action='pause') == {'goal':goal,'status':'paused'}
+    turn = owner.follow(session,'startAgent','POST',status=201,data={**payload('paused main'),'tools':False}).data
+    assert owner.follow(turn,'step','POST',data={}).data['status'] == 'completed'
+    assert context('paused main') == marker_history + [('user',THREAD_CASE+'active main'),('assistant','Answer to '+THREAD_CASE+'active main')]
+    assert set_goal(action='resume')['status'] == 'active'
+    assert set_goal(action='done') == {'goal':goal,'status':'done'}
+    owner.follow(session,'setGoal','PUT',status=409,data={'action':'resume'})
+    assert set_goal(action='clear') == none and stored_goal() == []
+
+    owner.follow(session,'askAside','POST',status=502,data=payload('unrequested tool'))
+    assert not rows('SELECT id FROM tool_runs WHERE session_id=%s',sid)
+    # Revoke the browser session during a real side dispatch. Charge it without saving its answer.
+    late = Client('api:8095').login('demo_two','owner')
+    handler.entered, handler.release = threading.Event(), threading.Event()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(late.follow,session,'askAside','POST',data=payload('expired caller'),status=401)
+        try:
+            assert handler.entered.wait(10), 'Side dispatch did not reach fixture'
+            expire(late,'usr_demo_two')
+        finally:
+            handler.release.set()
+        pending.result()
+    budget = owner.req('GET','/api/budget').data
+    assert budget['spent'] == before['spent'] + 7 and budget['reserved'] == 0
+    assert owner.follow(session,'askAside','POST',status=429,data=payload('over budget')).data['code'] == 'budget_exhausted'
+    assert rows('''SELECT outcome,count(*) FROM chat_dispatches WHERE session_id=%s
+                    AND user_message_id IS NULL AND assistant_message_id IS NULL GROUP BY outcome ORDER BY outcome''',sid) == [('answered',3),('failed',2)]
+    assert control.follow(session,'asides').data == {'items':[followup,second,first]}
+    # Exercise the history window without spending artificial provider units.
+    db.execute("""INSERT INTO thread_asides(id,session_id,user_id,question,answer,provider,model,created_at)
+        SELECT 'aside_'||lpad(to_hex(i),24,'0'),%s,'usr_demo_two','old','old','ollama','qa:agent',now()-make_interval(days=>i)
+        FROM generate_series(1,20) i""",(sid,))
+    latest = control.follow(session,'asides').data['items']
+    assert len(latest) == 20 and latest[:3] == [followup,second,first] and latest[-1]['id'] == f'aside_{17:024x}'
+    control.follow(grant,'delete','DELETE',status=204)
+    control.follow(session,'delete','DELETE',status=204)
+    assert not rows('SELECT id FROM thread_asides WHERE session_id=%s',sid)
+    assert not rows('SELECT goal FROM thread_goals WHERE session_id=%s',sid)
+    passed('actor-scoped durable goals and user-role dispatch, isolated concurrent side questions, explicit replies, replay boundaries, reauthentication and shared quota')
+
+
+def synthetic_chat(b, member, personal):
     from http.server import ThreadingHTTPServer
-    handler = runpy.run_path('scripts/test-ollama-transport.py')['OllamaFixture']
+    base_handler = runpy.run_path('scripts/test-ollama-transport.py')['OllamaFixture']
+    class Handler(base_handler):
+        thread_requests = {}
+
+        def agent_reply(self, data):
+            messages = data['messages']
+            prompt = next(m['content'] for m in reversed(messages) if m['role'] == 'user')
+            if prompt.startswith(THREAD_CASE):
+                self.thread_requests[prompt] = data
+                if prompt in (THREAD_CASE+'active main',THREAD_CASE+'expired caller'):
+                    self.entered.set()
+                    if not self.release.wait(30):
+                        self.send_error(504)
+                        return
+                message = {'role':'assistant','content':'Answer to '+prompt}
+                if prompt == THREAD_CASE+'unrequested tool':
+                    message['tool_calls'] = [{'function':{'name':'write','arguments':{'path':'side.txt','content':'must not be written'}}}]
+            elif prompt != POLICY_PROMPT:
+                return super().agent_reply(data)
+            elif messages[-1]['role'] == 'tool':
+                results = [m['content'] for m in messages if m['role'] == 'tool']
+                if len(results) != 4 or results[:3] != ['Wrote 3 bytes','Wrote 6 bytes','Wrote 8 bytes'] or not results[3].startswith('Error:'):
+                    self.send_error(400)
+                    return
+                message = {'role':'assistant','content':'Checked the tool results.'}
+            else:
+                self.entered.set()
+                if not self.release.wait(10):
+                    self.send_error(504)
+                    return
+                calls = [('write',{'path':'draft.txt','content':'one'}),
+                         ('edit',{'path':'draft.txt','oldText':'one','newText':'edited'}),
+                         ('write',{'path':'marker.txt','content':'replaced'}),
+                         ('write',{'path':'../escape','content':'invalid'})]
+                message = {'role':'assistant','content':'','tool_calls':[{'function':{'name':n,'arguments':args}} for n,args in calls]}
+            body = json.dumps({'done':True,'message':message}).encode()
+            self.send_response(200)
+            self.send_header('Content-Length',str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
     # Bind only inside the internal QA network. This fixture cannot forward requests.
-    with ThreadingHTTPServer(('0.0.0.0',11435),handler) as server:
+    with ThreadingHTTPServer(('0.0.0.0',11435),Handler) as server:
         thread = threading.Thread(target=server.serve_forever,daemon=True)
         thread.start()
         cl = Client('api:8095'); cl.cookie = b.cookie; cl.csrf = b.csrf
@@ -589,10 +1046,44 @@ def synthetic_chat(b):
                 ('answered',answer['userMessage']['id'],answer['assistantMessage']['id']),('failed',None,None)]
             for turn in turns:
                 cl.follow(turn,'delete','DELETE',status=204)
+            thread_commands(cl,b,member,Handler)
+
+            # Same transport, different actor and no project. Read the committed
+            # turn pair back through the ordinary API as well as PostgreSQL.
+            private = Client('api:8095'); private.cookie = member.cookie; private.csrf = member.csrf
+            answer = private.follow(personal,'chat','POST',data=message).data
+            assert (answer['sessionId'],answer['provider'],answer['model']) == (personal['id'],'ollama','qa:model')
+            turns = member.follow(personal,'messages').data['items']
+            expected = sorted([(answer['userMessage']['id'],'user','success'),
+                               (answer['assistantMessage']['id'],'assistant','fixture result')])
+            assert sorted((r['id'],r['role'],r['content']) for r in turns) == expected
+            assert rows('SELECT id,role,content FROM messages WHERE session_id=%s ORDER BY id',personal['id']) == expected
+            assert rows('SELECT user_id,outcome FROM chat_dispatches WHERE session_id=%s',personal['id']) == [('usr_qa_member','answered')]
+            for turn in turns:
+                b.follow(turn,'self',status=404)
+            agent_workflow(private, b, personal)
+            # Release a model-issued write only after a second HTTP worker cancels.
+            Handler.entered, Handler.release = threading.Event(), threading.Event()
+            late = private.follow(personal,'startAgent','POST',status=201,data={
+                'message':'Interrupt this turn','model':'qa:interrupt','provider':'ollama','tools':True}).data
+            spent = private.req('GET','/api/budget').data['spent']
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(private.follow,late,'step','POST',data={})
+                try:
+                    assert Handler.entered.wait(10), 'Provider request was not dispatched'
+                    assert member.follow(late,'self').data['status'] == 'working'
+                    assert member.follow(late,'cancel','POST',data={}).data['status'] == 'cancelled'
+                finally:
+                    Handler.release.set()
+                assert pending.result().data['status'] == 'cancelled'
+            assert private.req('GET','/api/budget').data['spent'] == spent + 1
+            assert not rows("SELECT id FROM tool_runs WHERE session_id=%s AND path='late.txt'",personal['id'])
+            passed('interrupt during inference discards a late tool call without refunding the model dispatch')
+            policy_workflow(private,member,personal,Handler)
         finally:
             server.shutdown()
             thread.join()
-    passed('synthetic Ollama HTTP transport: successful dispatch, atomic turn-pair rollback, retry and SQL/API agreement; no live inference claimed')
+    passed('synthetic Ollama HTTP: project and standalone chat turns persisted, atomic turn-pair rollback and retry; no live inference claimed')
 
 
 if __name__ == '__main__':
@@ -607,6 +1098,7 @@ if __name__ == '__main__':
         contract = runpy.run_path('scripts/validate-contract.py')['Contract']()
         with psycopg.connect(os.environ['DATABASE_URL'], autocommit=True) as db:
             a,b,member,viewer,admin = pages_and_identity()
+            registration()
             seeds = scope_query('usr_demo_one'),scope_query('usr_demo_two')
             collections(a)
             task = crud_and_formats(a,b,member,viewer,admin)
@@ -615,11 +1107,16 @@ if __name__ == '__main__':
             tools(a,b,viewer)
             composition(a)
             chat(a,b,viewer)
-            synthetic_chat(b)
+            personal = standalone_sessions(member,b,viewer,admin)
+            synthetic_chat(b,member,personal)
             check_migration_replay()
+            member.follow(personal,'delete','DELETE',status=204)
+            member.follow(personal,'self',status=404)
+            assert one('SELECT count(*) FROM messages WHERE session_id=%s',personal['id']) == 0
             rollback_delete(a)
             assert seeds == (scope_query('usr_demo_one'),scope_query('usr_demo_two'))
             login_limit()
+            registration_limit()
             audit = one("SELECT jsonb_agg(to_jsonb(t))::text FROM auth_audit t")
             assert audit and not any(s in audit for s in sensitive), 'Private data in persistent audit history'
         with os.fdopen(os.open(LOG_EXPECTATIONS, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600), 'w', encoding='utf-8') as out:

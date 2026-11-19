@@ -100,7 +100,8 @@ export function createApiChecks({ appState, rel, queryLink, fetchResponse, refre
     if (!session) throw new MissingPrerequisite('No visible session with a context link is selected.');
     const data = await request(rel(session, 'context', 'GET'), 200);
     const external = data.external;
-    expect(data.session?.id === session.id && data.project?.id === session.projectId && data.sources?.local === 'PostgreSQL', 'The local context did not identify the selected session and project.');
+    const matchingProject = session.projectId === null ? data.project === null : typeof session.projectId === 'string' && data.project?.id === session.projectId;
+    expect(data.session?.id === session.id && matchingProject && data.sources?.local === 'PostgreSQL', 'The local context did not identify the selected session and its project scope.');
     expect(external?.source && external.source === data.sources.external && ['live', 'fixture', 'none'].includes(external.provenance) &&
       ['ok', 'unavailable', 'not_configured'].includes(external.status), 'The external context did not report a recognized source, provenance and status.');
     notes.push(`Source: ${external.source}; provenance: ${external.provenance}; status: ${external.status}${external.reason ? ' (' + external.reason + ')' : ''}.`);

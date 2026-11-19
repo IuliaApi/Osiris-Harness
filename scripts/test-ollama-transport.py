@@ -11,11 +11,37 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OllamaFixture(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != 'http://host.docker.internal:11434/api/tags':
+            self.send_error(404)
+            return
+        body = b'{"models":[{"name":"qa:agent"},{"name":"qa:model"}]}'
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         if self.path != 'http://host.docker.internal:11434/api/chat':
             self.send_error(400)
             return
         data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        if data['model'] == 'qa:interrupt':
+            self.entered.set()
+            if not self.release.wait(10):
+                self.send_error(504)
+                return
+            body = json.dumps({'done':True,'message':{'role':'assistant','content':'','tool_calls':[
+                {'function':{'name':'write','arguments':{'path':'late.txt','content':'Do not apply'}}}]}}).encode()
+            self.send_response(200)
+            self.send_header('Content-Length',str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if data['model'] == 'qa:agent':
+            self.agent_reply(data)
+            return
         if (data['model'] != 'qa:model' or data['stream'] is not False
                 or data['options']['num_predict'] != 2048 or self.headers.get('Authorization')):
             self.send_error(400)
@@ -34,6 +60,33 @@ class OllamaFixture(BaseHTTPRequestHandler):
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass  # The size bound permits the client to stop receiving early.
+
+    def agent_reply(self, data):
+        # A deterministic protocol peer: later rounds only succeed if the real
+        # tool result was delivered in the native Ollama message history.
+        if {tool['function']['name'] for tool in data['tools']} != {'read','write','glob','grep','edit'}:
+            self.send_error(400)
+            return
+        messages = data['messages']
+        results = [m['content'] for m in messages if m['role'] == 'tool']
+        content = 'The stored marker is canyon.'
+        if results == []:
+            name, args = 'write', {'path':'marker.txt','content':'canyon'}
+        elif results == ['Wrote 6 bytes']:
+            name, args = 'read', {'path':'marker.txt'}
+        elif len(results) == 2 and results[0] == 'Wrote 6 bytes' and 'canyon' in results[1]:
+            name, args = None, None
+        else:
+            self.send_error(400)
+            return
+        message = {'role':'assistant', 'content':'' if name else content}
+        if name:
+            message['tool_calls'] = [{'function':{'name':name,'arguments':args}}]
+        result = json.dumps({'model':'qa:agent','done':True,'message':message}).encode()
+        self.send_response(200)
+        self.send_header('Content-Length',str(len(result)))
+        self.end_headers()
+        self.wfile.write(result)
 
     def log_message(self, *args):
         pass

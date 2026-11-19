@@ -7,7 +7,7 @@ final class WorkspaceRepository
     private const FIELDS = [
         'projects' => ['id', 'user_id', 'name', 'language', 'repository_url', 'visibility', 'created_at', 'updated_at'],
         'sessions' => ['id', 'project_id', 'title', 'status', 'created_at', 'updated_at'],
-        'messages' => ['id', 'session_id', 'role', 'content', 'created_at'],
+        'messages' => ['id', 'session_id', 'role', 'content', 'agent_events', 'created_at'],
         'tasks' => ['id', 'session_id', 'title', 'status', 'result', 'version', 'created_at', 'updated_at'],
     ];
     private const WRITABLE = [
@@ -112,14 +112,21 @@ final class WorkspaceRepository
     public function create(string $type, array $payload, array $fixed = []): array
     {
         if ($type === 'projects') {
-            if (!$this->auth->canCreateProject()) { throw new ApiError(403, 'Cannot create projects', 'forbidden'); }
+            if (!$this->auth->canCreateWorkspaceResources()) { throw new ApiError(403, 'Cannot create projects', 'forbidden'); }
             if (($payload['visibility'] ?? 'private') === 'public' && !in_array($this->auth->user()['role'], ['owner','admin'], true)) {
                 throw new ApiError(403, 'Cannot publish projects', 'forbidden');
             }
             $fixed['userId'] = $this->auth->user()['id'];
         }
         $fields = $this->validatePayload($type, $payload, false, $fixed);
-        if ($type === 'sessions') { $this->auth->requireAccess('projects',$fields['project_id'],'write'); }
+        if ($type === 'sessions') {
+            if (isset($fields['project_id'])) {
+                $this->auth->requireAccess('projects', $fields['project_id'], 'write');
+            } else {
+                if (!$this->auth->canCreateWorkspaceResources()) { throw new ApiError(403, 'Cannot create private sessions', 'forbidden'); }
+                $fields['owner_id'] = $this->auth->user()['id'];
+            }
+        }
         if ($type === 'messages' || $type === 'tasks') { $this->auth->requireAccess('sessions',$fields['session_id'],'write'); }
         if ($type === 'tasks' && (($fields['status'] ?? 'pending') !== 'pending' || isset($fields['result']))) {
             throw new ApiError(422, 'New tasks must be pending with no result', 'validation_error');
@@ -180,9 +187,6 @@ final class WorkspaceRepository
     public function deleteSessionWithContents(string $id): bool
     {
         $this->auth->requireAccess('sessions',$id,'manage');
-        $lock = $this->db->prepare('SELECT id FROM sessions WHERE id = ? FOR UPDATE');
-        $lock->execute([$id]);
-        if (!$lock->fetch()) { return false; }
         foreach (['messages', 'tasks'] as $type) {
             $statement = $this->db->prepare("DELETE FROM $type WHERE session_id = ?");
             $statement->execute([$id]);
@@ -202,20 +206,25 @@ final class WorkspaceRepository
     }
 
     /** Called in the same transaction as successful settlement of the dispatch reservation. */
-    public function recordExchange(string $sessionId, string $prompt, string $answer): array
+    public function recordExchange(string $sessionId, string $prompt, string $answer, array $events = []): array
     {
-        $stmt = $this->db->prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, clock_timestamp())');
+        $stmt = $this->db->prepare('INSERT INTO messages (id, session_id, role, content, agent_events, created_at) VALUES (?, ?, ?, ?, ?, clock_timestamp())');
         $userId = $this->newId('messages');
         $assistantId = $this->newId('messages');
-        $stmt->execute([$userId, $sessionId, 'user', $prompt]);
-        $stmt->execute([$assistantId, $sessionId, 'assistant', $answer]);
+        $stmt->execute([$userId, $sessionId, 'user', $prompt, null]);
+        $stmt->execute([$assistantId, $sessionId, 'assistant', $answer, $events === [] ? null : json_encode($events, JSON_THROW_ON_ERROR)]);
         return ['userMessage' => $this->get('messages', $userId), 'assistantMessage' => $this->get('messages', $assistantId)];
+    }
+
+    public function projectForSession(array $session): ?array
+    {
+        return $session['projectId'] === null ? null : $this->get('projects', $session['projectId']);
     }
 
     public function composeSession(array $session, array $include): array
     {
         foreach ($include as $part) {
-            if ($part === 'project') { $session['project'] = $this->get('projects', $session['projectId']); }
+            if ($part === 'project') { $session['project'] = $this->projectForSession($session); }
             if ($part === 'messages' || $part === 'tasks') {
                 $result = $this->list($part, $part === 'messages' ? ['limit' => '50', 'sort' => 'createdAt', 'order' => 'desc'] : ['limit' => '25'], ['sessionId' => $session['id']]);
                 $session[$part] = $part === 'messages' ? array_reverse($result['items']) : $result['items'];
@@ -237,7 +246,7 @@ final class WorkspaceRepository
             $payload[$key] = $value;
         }
         $required = [
-            'projects' => ['userId', 'name'], 'sessions' => ['projectId', 'title'],
+            'projects' => ['userId', 'name'], 'sessions' => ['title'],
             'messages' => ['sessionId', 'role', 'content'], 'tasks' => ['sessionId', 'title'],
         ];
         if (!$patch) {
@@ -248,7 +257,7 @@ final class WorkspaceRepository
             if (!array_key_exists($key, $payload)) { continue; }
             $value = $payload[$key];
             $nullable = in_array($key, ['language', 'repositoryUrl', 'result'], true);
-            if ($value === null && $nullable) { $out[$column] = null; continue; }
+            if ($value === null && ($nullable || $key === 'projectId')) { $out[$column] = null; continue; }
             if (!is_string($value) || (!$nullable && trim($value) === '') || utf8Length($value) > 10000) {
                 throw new ApiError(422, "$key must be a nonempty string (max 10000 characters), or null if optional");
             }
@@ -308,6 +317,10 @@ final class WorkspaceRepository
     {
         $data = [];
         foreach ($row as $key => $value) {
+            if ($key === 'agent_events') {
+                if ($value !== null) { $data['agentEvents'] = json_decode($value, true, flags: JSON_THROW_ON_ERROR); }
+                continue;
+            }
             $jsonKey = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $key))));
             if ($key === 'version') { $value = (int) $value; }
             if ($value !== null && str_ends_with($key, '_at')) {

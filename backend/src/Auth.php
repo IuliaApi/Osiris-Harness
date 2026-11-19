@@ -79,9 +79,54 @@ final class Auth
         $db->prepare("SELECT pg_advisory_xact_lock(hashtext('account'),hashtext(?))")->execute([$username]);
     }
 
+    private function createSession(array $user, string $event): void
+    {
+        $token = bin2hex(random_bytes(32));
+        $prior = $_COOKIE[self::COOKIE] ?? '';
+        if (is_string($prior) && preg_match('/\A[a-f0-9]{64}\z/D', $prior)) {
+            $this->statement('DELETE FROM auth_sessions WHERE token_hash=?', [hash('sha256', $prior)]);
+        }
+        $this->statement("INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES (?,?,now()+make_interval(secs => ?))",
+            [hash('sha256', $token), $user['id'], self::LIFETIME]);
+        $this->activate($user, $token);
+        $this->audit($event);
+    }
+
+    /** Send the cookie only after the transaction that created its session commits. */
+    private function signedInResponse(): array
+    {
+        $this->cookie($this->token, time() + self::LIFETIME);
+        return $this->identity();
+    }
+
+    public function register(array $body): array
+    {
+        $this->limit('register-ip:' . ($_SERVER['REMOTE_ADDR'] ?? 'local'), 900, 20);
+        if (array_diff(array_keys($body), ['username', 'password'])) {
+            throw new ApiError(422, 'Supply only a username and password', 'validation_error');
+        }
+        $name = $body['username'] ?? null;
+        if (!is_string($name) || !preg_match('/\A[a-zA-Z0-9_-]{1,100}\z/D', $name)) {
+            throw new ApiError(422, 'Use 1–100 letters, digits, hyphens or underscores for the username', 'validation_error');
+        }
+        $password = $body['password'] ?? null;
+        if (!is_string($password) || strlen($password) < 12 || strlen($password) > 72 || str_contains($password, "\0")) {
+            throw new ApiError(422, 'Use a password of 12–72 UTF-8 bytes without a null character', 'validation_error');
+        }
+        $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+        inDatabaseTransaction($this->db, function () use ($name, $hash): void {
+            $id = 'usr_' . bin2hex(random_bytes(12));
+            $user = $this->statement('INSERT INTO users(id,username,email,password_hash) VALUES (?,?,?,?)
+                ON CONFLICT (username) DO NOTHING RETURNING id,username,role',
+                [$id, $name, hash('sha256', $id) . '@accounts.invalid', $hash])->fetch(PDO::FETCH_ASSOC);
+            if (!$user) { throw new ApiError(409, 'That username is already taken', 'conflict'); }
+            $this->createSession($user, 'account.register');
+        });
+        return $this->signedInResponse();
+    }
+
     public function login(array $body): array
     {
-        self::sameOrigin();
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'local';
         $this->limit('login-ip:' . $ip, 300, 60);
         $name = $body['username'] ?? null;
@@ -92,32 +137,20 @@ final class Auth
         $this->limit('login-account:' . $ip . ':' . $name, 300, 10);
         // Cleanup follows the cheap IP limiter. The same task is available via the maintenance CLI.
         self::prune($this->db);
-        $this->db->beginTransaction();
-        try {
+        $authenticated = inDatabaseTransaction($this->db, function () use ($name, $password): bool {
             // A concurrent password reset must revoke this login too.
             self::lockAccount($this->db, $name);
             $user = $this->statement('SELECT id,username,role,password_hash FROM users WHERE username=?', [$name])->fetch(PDO::FETCH_ASSOC);
             $matches = password_verify($password, $user['password_hash'] ?? self::DUMMY_HASH);
             if (!$matches || !isset($user['password_hash'])) {
                 $this->audit('login.denied');
-                $this->db->commit();
-                throw new ApiError(401, 'Invalid credentials', 'unauthorized');
+                return false;
             }
-            $token = bin2hex(random_bytes(32));
-            $prior = $_COOKIE[self::COOKIE] ?? '';
-            if (is_string($prior) && preg_match('/\A[a-f0-9]{64}\z/D', $prior)) {
-                $this->statement('DELETE FROM auth_sessions WHERE token_hash=?', [hash('sha256', $prior)]);
-            }
-            $this->statement("INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES (?,?,now()+interval '8 hours')", [hash('sha256', $token), $user['id']]);
-            $this->activate($user, $token);
-            $this->audit('login.success');
-            $this->db->commit();
-            $this->cookie($token, time() + self::LIFETIME);
-            return $this->identity();
-        } catch (Throwable $e) {
-            if ($this->db->inTransaction()) { $this->db->rollBack(); }
-            throw $e;
-        }
+            $this->createSession($user, 'login.success');
+            return true;
+        });
+        if (!$authenticated) { throw new ApiError(401, 'Invalid credentials', 'unauthorized'); }
+        return $this->signedInResponse();
     }
 
     public static function prune(PDO $db): void
@@ -154,21 +187,22 @@ final class Auth
         $this->statement('INSERT INTO auth_audit(request_id,actor_id,event,target_id) VALUES (?,?,?,?)', [$this->requestId, $this->actor['id'] ?? null, $event, $id]);
     }
 
-    public function canCreateProject(): bool { return isset($this->actor['role']) && $this->actor['role'] !== 'viewer'; }
+    public function canCreateWorkspaceResources(): bool { return isset($this->actor['role']) && $this->actor['role'] !== 'viewer'; }
 
     /** A scoped relation, used for detail, lists, filtering, counts and access checks alike. */
     public function relation(string $type): array
     {
-        [$source, $p] = match ($type) {
-            'projects' => ['projects r', 'r'],
-            'sessions' => ['sessions r JOIN projects p ON p.id=r.project_id', 'p'],
-            'messages', 'tasks' => ["$type r JOIN sessions s ON s.id=r.session_id JOIN projects p ON p.id=s.project_id", 'p'],
+        [$source, $p, $ownsSession] = match ($type) {
+            'projects' => ['projects r', 'r', 'FALSE'],
+            'sessions' => ['sessions r LEFT JOIN projects p ON p.id=r.project_id', 'p', 'r.owner_id=a.id'],
+            'messages', 'tasks' => ["$type r JOIN sessions s ON s.id=r.session_id LEFT JOIN projects p ON p.id=s.project_id", 'p', 's.owner_id=a.id'],
         };
-        $sql = "(SELECT r.*, CASE WHEN a.role <> 'viewer' AND $p.user_id=a.id AND a.role IN ('owner','admin') THEN 3
-            WHEN a.role <> 'viewer' AND ($p.user_id=a.id OR m.role='member') THEN 2 ELSE 1 END AS access_level
+        $sql = "(SELECT r.*, CASE WHEN a.role='viewer' THEN 1
+            WHEN $ownsSession OR ($p.user_id=a.id AND a.role IN ('owner','admin')) THEN 3
+            WHEN $p.user_id=a.id OR m.role='member' THEN 2 ELSE 1 END AS access_level
             FROM $source CROSS JOIN (SELECT ?::text AS id, ?::text AS role) a
             LEFT JOIN project_members m ON m.project_id=$p.id AND m.user_id=a.id
-            WHERE $p.visibility='public' OR (a.role<>'viewer' AND ($p.user_id=a.id OR m.user_id IS NOT NULL))) scoped";
+            WHERE $ownsSession OR $p.visibility='public' OR (a.role<>'viewer' AND ($p.user_id=a.id OR m.user_id IS NOT NULL))) scoped";
         return [$sql, [$this->actor['id'], $this->actor['role']]];
     }
 
@@ -188,20 +222,34 @@ final class Auth
         return $level >= self::minimum($permission);
     }
 
+    /** Lock the ACL-bearing parent and the target before evaluating permissions in a fresh snapshot. */
+    private function lockAccessScope(string $type, string $id): void
+    {
+        if ($type === 'projects') {
+            $locked = $this->statement('SELECT id FROM projects WHERE id=? FOR UPDATE', [$id])->fetchColumn();
+        } else {
+            [$children, $target] = match ($type) {
+                'sessions' => ['', 's'],
+                'messages', 'tasks' => [" JOIN $type r ON r.session_id=s.id", 'r'],
+            };
+            // Separate the two parent types: PostgreSQL cannot FOR UPDATE the nullable side of an outer join.
+            $locked = $this->statement("SELECT s.id FROM projects p JOIN sessions s ON s.project_id=p.id$children WHERE $target.id=? FOR UPDATE", [$id])->fetchColumn();
+            if ($locked === false) {
+                $locked = $this->statement("SELECT s.id FROM sessions s$children WHERE $target.id=? AND s.project_id IS NULL FOR UPDATE", [$id])->fetchColumn();
+            }
+        }
+        if ($locked === false) { throw new ApiError(404, 'Resource not found', 'not_found'); }
+    }
+
     /** For a transaction-bound mutation, serialize ACL changes with the protected write. */
     public function requireAccess(string $type, string $id, string $permission): void
     {
         if ($this->db->inTransaction() && $permission !== 'read') {
-            $source = match ($type) {
-                'projects' => 'projects p WHERE p.id=?',
-                'sessions' => 'projects p JOIN sessions s ON s.project_id=p.id WHERE s.id=?',
-                'messages','tasks' => "projects p JOIN sessions s ON s.project_id=p.id JOIN $type r ON r.session_id=s.id WHERE r.id=?",
-            };
-            $this->statement("SELECT p.id FROM $source FOR UPDATE OF p", [$id]);
+            $this->lockAccessScope($type, $id);
         }
         $level = $this->levels[$type][$id] = $this->level($type, $id);
         if ($level === 0) { throw new ApiError(404, 'Resource not found', 'not_found'); }
-        if ($level < self::minimum($permission)) { throw new ApiError(403, 'Insufficient project permissions', 'forbidden'); }
+        if ($level < self::minimum($permission)) { throw new ApiError(403, 'Insufficient permissions', 'forbidden'); }
     }
 
     public function membership(string $project, ?string $userId, string $method): never

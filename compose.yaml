@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
+      # Keep thread navigation responsive while a worker waits on a model.
+      PHP_CLI_SERVER_WORKERS: "2"
       DATABASE_URL: postgres://osiris_app@db:5432/${OSIRIS_DATABASE_NAME:-osiris_dev}
       OSIRIS_DB_PASSWORD_FILE: /run/osiris/db.key
       OSIRIS_GITHUB_MODE: ${OSIRIS_GITHUB_MODE:-online}
@@ -13,7 +15,7 @@ services:
       OSIRIS_DAILY_CHAT_LIMIT: ${OSIRIS_DAILY_CHAT_LIMIT:-20}
       OSIRIS_OPENAI_MODEL: ${OSIRIS_OPENAI_MODEL:-gpt-4.1-mini}
       OSIRIS_ANTHROPIC_MODEL: ${OSIRIS_ANTHROPIC_MODEL:-claude-haiku-4-5}
-      OSIRIS_OLLAMA_MODEL: ${OSIRIS_OLLAMA_MODEL:-llama3.2}
+      OSIRIS_OLLAMA_MODEL: ${OSIRIS_OLLAMA_MODEL:-qwen3:1.7b}
       OSIRIS_OLLAMA_ENABLED: ${OSIRIS_OLLAMA_ENABLED:-1}
     volumes:
       - type: bind

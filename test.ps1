@@ -53,7 +53,7 @@ try {
     Invoke-LabDocker @('build','-q','-f','scripts/Dockerfile.qa','--target','unit','--build-arg',"APP_IMAGE=$appImage",'-t',$unitImage,'scripts') | Out-Host
     $images = @($unitImage,$appImage)
     Invoke-LabDocker @('run','--rm','--network','none',$unitImage,'sh','-ec',
-        'for f in backend/bootstrap.php backend/src/*.php backend/public/*.php; do php -l "$f"; done; for s in test-ai-provider test-workspace-policies test-representations test-github-context; do php scripts/$s.php; done; for s in test-semantic-formats test-ollama-transport test-http-no-db; do python3 scripts/$s.py; done')
+        'for f in backend/bootstrap.php backend/src/*.php backend/public/*.php; do php -l "$f"; done; for s in test-ai-provider test-model-catalog test-workspace-policies test-representations test-github-context; do php scripts/$s.php; done; for s in test-semantic-formats test-ollama-transport test-http-no-db; do python3 scripts/$s.py; done')
     $qaBuild = @('build','-q','-f','scripts/Dockerfile.qa','-t',$qaImage)
     if ($Browser) { $qaBuild += @('--target','browser') } else { $qaBuild += @('--target','http') }
     Invoke-LabDocker ($qaBuild + 'scripts') | Out-Host
@@ -108,8 +108,8 @@ try {
     }
     if ($Browser) { Provision $api usr_qa_browser qa_browser owner }
     # This server alone permits Ollama, through the private synthetic HTTP double.
-    Invoke-LabDocker @('exec','-d','-e','OSIRIS_OLLAMA_ENABLED=1','-e','http_proxy=http://qa-runner:11435',
-        '-e','no_proxy=','-e','NO_PROXY=',$api,'php','-S','0.0.0.0:8095','-t','backend/public','backend/public/index.php')
+    Invoke-LabDocker @('exec','-d','-e','OSIRIS_OLLAMA_ENABLED=1','-e','OSIRIS_DAILY_CHAT_LIMIT=9','-e','http_proxy=http://qa-runner:11435',
+        '-e','no_proxy=','-e','NO_PROXY=','-e','PHP_CLI_SERVER_WORKERS=2',$api,'php','-S','0.0.0.0:8095','-t','backend/public','backend/public/index.php')
     Invoke-LabDocker @('run','-d','--name',$runner,'--network',$prefix,'--network-alias','qa-runner','--mount',$dbMount,
         '--mount',"type=bind,src=$PSScriptRoot/docs,dst=/repo/docs,readonly",
         '--mount',"type=bind,src=$PSScriptRoot/scripts,dst=/repo/scripts,readonly",
@@ -127,7 +127,7 @@ try {
     $apiLog | docker exec -i $runner python scripts/test-workspace-api.py --check-logs
     if ($LASTEXITCODE -ne 0) { throw 'Safe-log assertions failed.' }
     if ($Browser) {
-        Invoke-LabDocker @('exec',$runner,'python','-u','scripts/test-workspace-ui.py')
+        Invoke-LabDocker @('exec','-e','OSIRIS_TEST_BASE_URL=http://api:8095',$runner,'python','-u','scripts/test-workspace-ui.py')
     }
 } finally {
     [array]::Reverse($containers)

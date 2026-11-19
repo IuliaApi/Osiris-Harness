@@ -3,13 +3,13 @@ info:
   title: "Osiris Harness local API"
   version: "3.0.0"
   description: |-
-    Authenticate before reading or writing API resources; the loopback browser pages remain public. Viewers read only public projects and cannot write. Members write their own projects or those granting member access; only an owner/admin managing their own project may delete resources or manage explicit members. An admin has no global cross-tenant override. Counts, nested routes and linked actions are scoped to the same identity. An invisible or missing object returns 404; insufficient access to a visible object returns 403. Ownership and parent relationships cannot be transferred through PATCH.
+    Authenticate before reading or writing API resources; the loopback browser pages remain public. Viewers read only public projects and cannot write. Members write their own projects or those granting member access; only an owner/admin managing their own project may delete project resources or manage explicit members. Sessions without a project and all their descendants are private to the individual who created the session. That person may read, write and delete them without owning a project. An admin has no global cross-tenant override. Counts, nested routes and linked actions are scoped to the same identity. An invisible or missing object returns 404; insufficient access to a visible object returns 403. Ownership and parent relationships cannot be transferred through PATCH.
 
     All request entities are UTF-8 objects, max 65,536 bytes, max depth 32. Send Content-Type with a body; Accept independently selects the response. JSON, XML and YAML represent the same typed data. Missing Accept or */* prefers JSON. text/xml and text/yaml are aliases for the canonical application types. Malformed documents/duplicate fields: 400; too large: 413; unsupported encoding or media type: 415; well-formed but invalid fields: 422. Unsupported Accept returns 406 with JSON. DELETE successes and logout return 204 with no entity.
 
     XML input uses <request kind="object"> with named field children; output uses <response kind="object|array">. Nested objects/arrays have kind="object|array"; array entries use <item>. Strings use character data, other scalars use type="integer|number|boolean", null uses xsi:nil="true" in the XML Schema Instance namespace. YAML is a single data mapping on input; do not use aliases or custom tags.
 
-    Every API response carries X-Request-Id; structured errors repeat it in requestId. Invalid routes return 404 and unsupported methods on known routes return 405 with Allow. Rate-limited writes can return 429. Changes of state require the session cookie plus X-CSRF-Token; cross-site writes are rejected. An authorized request must satisfy the current database state regardless of any previously advertised action.
+    Every API response carries X-Request-Id; structured errors repeat it in requestId. Invalid routes return 404 and unsupported methods on known routes return 405 with Allow. Rate-limited writes can return 429. Changes of state require the session cookie plus X-CSRF-Token, except for login and registration. Cross-site writes are rejected. An authorized request must satisfy the current database state regardless of any previously advertised action.
 servers:
   -
     url: "http://127.0.0.1:8080"
@@ -20,12 +20,29 @@ paths:
   /api:
     get:
       operationId: discover
-      description: "Authenticated entry point. Credential and creation links are role-sensitive."
+      description: "Authenticated entry point. Non-viewers receive createSession (POST /sessions), even when they have no projects. Credential and creation links are role-sensitive."
       responses:
         "200": {$ref: "#/components/responses/Discovery"}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+  /auth/register:
+    post:
+      operationId: register
+      description: "Create a local member and sign in. GET /register serves the public browser form. No session or CSRF token is required; cross-origin requests are rejected (403). User IDs are server-assigned. A username already held by any account, even a disabled one, returns 409 without changing that account. The per-IP limit is 20 attempts per 15 minutes; 429 includes Retry-After in seconds."
+      security: []
+      requestBody: {$ref: "#/components/requestBodies/RegisterInput"}
+      responses:
+        "201": {$ref: "#/components/responses/Registered"}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
         "500": {$ref: "#/components/responses/Error"}
   /auth/login:
     post:
@@ -77,6 +94,17 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "406": {$ref: "#/components/responses/NotAcceptable"}
         "500": {$ref: "#/components/responses/Error"}
+  /api/models:
+    get:
+      operationId: listAvailableModels
+      description: "Enumerate model identifiers from this account’s configured providers. Status is per provider; catalog reads do not perform inference or consume the chat budget."
+      responses:
+        "200": {$ref: "#/components/responses/ModelCatalog"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /api/maintenance/prune:
     post:
       operationId: pruneExpiredAuthRecords
@@ -318,7 +346,7 @@ paths:
   /sessions:
     get:
       operationId: listSessions
-      description: "No query parameters: original unbounded, ordered plain array, restricted to the current actor. Any supported collection control selects the paginated representation."
+      description: "Includes the actor's private sessions and sessions in visible projects. No query parameters: original unbounded, ordered plain array. Any supported collection control selects the paginated representation, with a create link to POST /sessions for non-viewers. Filtering by projectId returns only sessions in that project."
       parameters:
         - {$ref: "#/components/parameters/limit"}
         - {$ref: "#/components/parameters/offset"}
@@ -345,7 +373,7 @@ paths:
         "500": {$ref: "#/components/responses/Error"}
     post:
       operationId: createSession
-      description: "Create a session in a writable project."
+      description: "Non-viewers can create a private session by sending a title and omitting projectId or setting it to null. No project is created. A non-null projectId attaches the session to that project and requires write access there."
       security: [{sessionCookie: [], csrfHeader: []}]
       requestBody: {$ref: "#/components/requestBodies/CreateSession"}
       responses:
@@ -365,7 +393,7 @@ paths:
     parameters: [{$ref: "#/components/parameters/sessionId"}]
     get:
       operationId: getSession
-      description: "Read a visible session and optionally compose project, messages and tasks."
+      description: "Read a visible session and optionally compose project, messages and tasks. Full and summary representations always include projectId. Without a project, projectId is null, _links.project is absent, and include=project returns project: null."
       parameters: [{$ref: "#/components/parameters/view"}, {$ref: "#/components/parameters/include"}]
       responses:
         "200": {$ref: "#/components/responses/SessionItem"}
@@ -580,6 +608,192 @@ paths:
         "428": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/RateLimited"}
         "500": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/goal:
+    parameters: [{$ref: "#/components/parameters/sessionId"}]
+    get:
+      operationId: getThreadGoal
+      description: "Read the requesting account’s goal in this thread."
+      responses:
+        "200": {$ref: "#/components/responses/ThreadGoal"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+    put:
+      operationId: updateThreadGoal
+      description: "Set an objective or change its state. An active goal informs future main turns."
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody: {$ref: "#/components/requestBodies/GoalInput"}
+      responses:
+        "200": {$ref: "#/components/responses/ThreadGoal"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/asides:
+    parameters: [{$ref: "#/components/parameters/sessionId"}]
+    get:
+      operationId: listThreadAsides
+      description: "Return up to 20 of this account’s recent side questions, newest first."
+      responses:
+        "200": {$ref: "#/components/responses/AsideHistory"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+    post:
+      operationId: askThreadAside
+      description: "Ask a metered side question using the thread’s conversation. Neither question nor answer is appended to the main thread."
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody: {$ref: "#/components/requestBodies/AsideInput"}
+      responses:
+        "200": {$ref: "#/components/responses/ThreadAside"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+        "504": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/permissions:
+    parameters: [{$ref: "#/components/parameters/sessionId"}]
+    get:
+      operationId: getChatPermissions
+      description: "Read the requesting account’s file-tool mode for this thread. Defaults to ask."
+      responses:
+        "200": {$ref: "#/components/responses/ChatPermissions"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+    put:
+      operationId: setChatPermissions
+      description: "Set the requesting account’s file-tool policy for this thread. Requires write access; existing pending proposals are not approved retroactively."
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody: {$ref: "#/components/requestBodies/ChatPermissions"}
+      responses:
+        "200": {$ref: "#/components/responses/ChatPermissions"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/agent:
+    parameters: [{$ref: "#/components/parameters/sessionId"}]
+    get:
+      operationId: currentAgentTurn
+      description: "Latest run for this actor and thread; recovery never invokes a model."
+      responses:
+        "200": {$ref: "#/components/responses/CurrentAgentRun"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+    post:
+      operationId: startAgentTurn
+      description: "Start a recoverable turn. No inference or file operation happens until a step is requested."
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody: {$ref: "#/components/requestBodies/AgentInput"}
+      responses:
+        "201": {$ref: "#/components/responses/AgentRun"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/agent/{turnId}:
+    parameters: [{$ref: "#/components/parameters/sessionId"}, {$ref: "#/components/parameters/turnId"}]
+    get:
+      operationId: getAgentTurn
+      description: "Read this actor’s turn, status and real tool results."
+      responses:
+        "200": {$ref: "#/components/responses/AgentRun"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/agent/{turnId}/step:
+    parameters: [{$ref: "#/components/parameters/sessionId"}, {$ref: "#/components/parameters/turnId"}]
+    post:
+      operationId: advanceAgentTurn
+      description: "Perform one metered model dispatch. Follow the returned round link; pending writes must be applied before continuing."
+      security: [{sessionCookie: [], csrfHeader: []}]
+      parameters: [{name: round, in: query, required: true, schema: {type: integer, minimum: 0, maximum: 4}}]
+      requestBody: {$ref: "#/components/requestBodies/Empty"}
+      responses:
+        "200": {$ref: "#/components/responses/AgentRun"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+        "504": {$ref: "#/components/responses/Error"}
+  /sessions/{sessionId}/agent/{turnId}/cancel:
+    parameters: [{$ref: "#/components/parameters/sessionId"}, {$ref: "#/components/parameters/turnId"}]
+    post:
+      operationId: cancelAgentTurn
+      description: "Stop further steps and discard an in-flight answer. A dispatched request is still charged."
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody: {$ref: "#/components/requestBodies/Empty"}
+      responses:
+        "200": {$ref: "#/components/responses/AgentRun"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
   /sessions/{sessionId}/chat:
     parameters: [{$ref: "#/components/parameters/sessionId"}]
     post:
@@ -607,7 +821,7 @@ paths:
     parameters: [{$ref: "#/components/parameters/sessionId"}]
     get:
       operationId: getSessionExternalContext
-      description: "Return PostgreSQL data even if the allowlisted GitHub repository is unavailable. Inspect external.status, reason and provenance. Fixture scenarios are controlled by server configuration; this endpoint accepts no query."
+      description: "Return PostgreSQL data even if the allowlisted GitHub repository is unavailable. A private session without a project returns project: null. Inspect external.status, reason and provenance. Fixture scenarios are controlled by server configuration; this endpoint accepts no query."
       responses:
         "200": {$ref: "#/components/responses/Context"}
         "400": {$ref: "#/components/responses/Error"}
@@ -725,6 +939,7 @@ components:
     messageId: {name: messageId, in: path, required: true, schema: {type: string, minLength: 1}}
     taskId: {name: taskId, in: path, required: true, schema: {type: string, minLength: 1}}
     userId: {name: userId, in: path, required: true, schema: {type: string, minLength: 1}}
+    turnId: {name: turnId, in: path, required: true, schema: {type: string, pattern: "^turn_[a-f0-9]{24}$"}}
     runId: {name: runId, in: path, required: true, schema: {type: string, minLength: 1}}
     provider: {name: provider, in: path, required: true, schema: {type: string, enum: [openai, anthropic]}}
     ifMatch:
@@ -777,6 +992,14 @@ components:
         text/xml: {schema: {$ref: "#/components/schemas/LoginInput"}}
         application/yaml: {schema: {$ref: "#/components/schemas/LoginInput"}}
         text/yaml: {schema: {$ref: "#/components/schemas/LoginInput"}}
+    RegisterInput:
+      required: true
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/RegisterInput"}}
+        application/xml: {schema: {$ref: "#/components/schemas/RegisterInput"}}
+        text/xml: {schema: {$ref: "#/components/schemas/RegisterInput"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/RegisterInput"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/RegisterInput"}}
     CreateProject:
       required: true
       content:
@@ -841,6 +1064,38 @@ components:
         text/xml: {schema: {$ref: "#/components/schemas/UpdateTask"}}
         application/yaml: {schema: {$ref: "#/components/schemas/UpdateTask"}}
         text/yaml: {schema: {$ref: "#/components/schemas/UpdateTask"}}
+    GoalInput:
+      required: true
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/GoalInput"}}
+        application/xml: {schema: {$ref: "#/components/schemas/GoalInput"}}
+        text/xml: {schema: {$ref: "#/components/schemas/GoalInput"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/GoalInput"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/GoalInput"}}
+    AsideInput:
+      required: true
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/AsideInput"}}
+        application/xml: {schema: {$ref: "#/components/schemas/AsideInput"}}
+        text/xml: {schema: {$ref: "#/components/schemas/AsideInput"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/AsideInput"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/AsideInput"}}
+    ChatPermissions:
+      required: true
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+    AgentInput:
+      required: true
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/AgentInput"}}
+        application/xml: {schema: {$ref: "#/components/schemas/AgentInput"}}
+        text/xml: {schema: {$ref: "#/components/schemas/AgentInput"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/AgentInput"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/AgentInput"}}
     ChatInput:
       required: true
       content:
@@ -898,6 +1153,57 @@ components:
         application/yaml: {schema: {$ref: "#/components/schemas/Auth"}}
         text/xml: {schema: {$ref: "#/components/schemas/Auth"}}
         text/yaml: {schema: {$ref: "#/components/schemas/Auth"}}
+    Registered:
+      description: "New member's identity and CSRF token, identical in shape to login. The session expires after eight hours."
+      headers:
+        Location: {required: true, schema: {type: string, const: "/auth/me"}}
+        Set-Cookie: {required: true, description: "Host-only osiris_session cookie with Path=/, HttpOnly, SameSite=Strict, and Secure when using HTTPS.", schema: {type: string}}
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/Auth"}}
+        application/xml: {schema: {$ref: "#/components/schemas/Auth"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/Auth"}}
+        text/xml: {schema: {$ref: "#/components/schemas/Auth"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/Auth"}}
+    ThreadGoal:
+      description: Goal state for the requesting account.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ThreadGoal"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ThreadGoal"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ThreadGoal"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ThreadGoal"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ThreadGoal"}}
+    AsideHistory:
+      description: Recent private side questions.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/AsideHistory"}}
+        application/xml: {schema: {$ref: "#/components/schemas/AsideHistory"}}
+        text/xml: {schema: {$ref: "#/components/schemas/AsideHistory"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/AsideHistory"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/AsideHistory"}}
+    ThreadAside:
+      description: A saved question and answer.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ThreadAside"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ThreadAside"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ThreadAside"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ThreadAside"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ThreadAside"}}
+    ChatPermissions:
+      description: "Current account and thread approval policy."
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+    ModelCatalog:
+      description: "Model inventory without credentials or raw upstream responses."
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ModelCatalog"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ModelCatalog"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ModelCatalog"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ModelCatalog"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ModelCatalog"}}
     Runtime:
       description: "Provider configuration for this identity, not a connectivity test. No provider keys are returned."
       content:
@@ -1012,6 +1318,22 @@ components:
         application/yaml: {schema: {$ref: "#/components/schemas/Context"}}
         text/xml: {schema: {$ref: "#/components/schemas/Context"}}
         text/yaml: {schema: {$ref: "#/components/schemas/Context"}}
+    AgentRun:
+      description: Current agent turn with authorized next actions.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/AgentRun"}}
+        application/xml: {schema: {$ref: "#/components/schemas/AgentRun"}}
+        text/xml: {schema: {$ref: "#/components/schemas/AgentRun"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/AgentRun"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/AgentRun"}}
+    CurrentAgentRun:
+      description: Most recent turn for this account and thread, or null.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/CurrentAgentRun"}}
+        application/xml: {schema: {$ref: "#/components/schemas/CurrentAgentRun"}}
+        text/xml: {schema: {$ref: "#/components/schemas/CurrentAgentRun"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/CurrentAgentRun"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/CurrentAgentRun"}}
     ChatResult:
       description: "Both turns committed after a successful upstream reply."
       content:
@@ -1163,6 +1485,7 @@ components:
           allOf:
             - {$ref: "#/components/schemas/Links"}
             - {required: [self, me, projects, sessions, logout, runtime, budget]}
+            - {properties: {createSession: {properties: {href: {const: "/sessions"}}}}}
     Identity:
       type: object
       required: [id, username, role]
@@ -1187,6 +1510,24 @@ components:
           minLength: 1
           maxLength: 72
           description: "Maximum 72 UTF-8 bytes."
+          writeOnly: true
+      additionalProperties: false
+    RegisterInput:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 100
+          not: {pattern: "[^A-Za-z0-9_-]"}
+          description: "Case-sensitive ASCII letters, digits, underscores or hyphens."
+        password:
+          type: string
+          minLength: 3
+          maxLength: 72
+          not: {pattern: '\u0000'}
+          description: "12–72 bytes after UTF-8 encoding; NUL is not allowed. Length in bytes can differ from the number of characters."
           writeOnly: true
       additionalProperties: false
     Page:
@@ -1216,12 +1557,18 @@ components:
         visibility: {type: string, enum: [private, public]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    SessionProjectRelation:
+      description: "Only sessions attached to a project link to it. When requested, the embedded project is null for a standalone session."
+      if: {properties: {projectId: {type: "null"}}}
+      then: {properties: {_links: {not: {required: [project]}}, project: {type: "null"}}}
+      else: {properties: {_links: {required: [project]}, project: {$ref: "#/components/schemas/ProjectDetail"}}}
     Session:
+      $ref: "#/components/schemas/SessionProjectRelation"
       type: object
       required: [id, projectId, title, status, createdAt, updatedAt]
       properties:
         id: {type: string, minLength: 1}
-        projectId: {type: string, minLength: 1}
+        projectId: {type: [string, "null"], minLength: 1}
         title: {type: string, minLength: 1, maxLength: 10000}
         status: {type: string, enum: [active, completed, archived]}
         createdAt: {type: string, format: date-time}
@@ -1235,6 +1582,7 @@ components:
         role: {type: string, enum: [user, assistant, system, tool]}
         content: {type: string, minLength: 1, maxLength: 10000}
         createdAt: {type: string, format: date-time}
+        agentEvents: {type: array, items: {$ref: "#/components/schemas/AgentEvent"}}
     Task:
       type: object
       required: [id, sessionId, title, status, result, version, createdAt, updatedAt]
@@ -1319,21 +1667,22 @@ components:
             -
               type: object
               properties:
-                project: {$ref: "#/components/schemas/ProjectDetail"}
+                project: {$ref: "#/components/schemas/NullableProjectDetail"}
                 messages: {type: array, items: {$ref: "#/components/schemas/MessageDetail"}}
                 messagesPage: {$ref: "#/components/schemas/Page"}
                 tasks: {type: array, items: {$ref: "#/components/schemas/TaskDetail"}}
                 tasksPage: {$ref: "#/components/schemas/Page"}
         -
+          $ref: "#/components/schemas/SessionProjectRelation"
           type: object
           required: [id, projectId, title, status, createdAt, _links]
           properties:
             id: {type: string, minLength: 1}
-            projectId: {type: string, minLength: 1}
+            projectId: {type: [string, "null"], minLength: 1}
             title: {type: string, minLength: 1, maxLength: 10000}
             status: {type: string, enum: [active, completed, archived]}
             createdAt: {type: string, format: date-time}
-            project: {$ref: "#/components/schemas/ProjectDetail"}
+            project: {$ref: "#/components/schemas/NullableProjectDetail"}
             messages: {type: array, items: {$ref: "#/components/schemas/MessageDetail"}}
             messagesPage: {$ref: "#/components/schemas/Page"}
             tasks: {type: array, items: {$ref: "#/components/schemas/TaskDetail"}}
@@ -1415,10 +1764,10 @@ components:
       minProperties: 1
     CreateSession:
       type: object
-      required: [projectId, title]
+      required: [title]
       properties:
         id: {type: string, pattern: "^[A-Za-z0-9_-]{1,100}$"}
-        projectId: {type: string, minLength: 1}
+        projectId: {type: [string, "null"], minLength: 1, description: "Omit or send null for a private, standalone session."}
         title: {type: string, minLength: 1, maxLength: 10000}
         status: {type: string, enum: [active, completed, archived]}
       additionalProperties: false
@@ -1465,6 +1814,103 @@ components:
         result: {type: [string, "null"]}
       additionalProperties: false
       minProperties: 1
+    GoalInput:
+      oneOf:
+        - {type: object, required: [goal], properties: {goal: {type: string, minLength: 1, maxLength: 2000}}, additionalProperties: false}
+        - {type: object, required: [action], properties: {action: {enum: [pause, resume, done, clear]}}, additionalProperties: false}
+    ThreadGoal:
+      type: object
+      required: [goal, status]
+      properties:
+        goal: {type: [string, "null"], maxLength: 2000}
+        status: {enum: [none, active, paused, done]}
+      additionalProperties: false
+    AsideInput:
+      type: object
+      required: [message, provider, model]
+      properties:
+        message: {type: string, minLength: 1, maxLength: 6000}
+        provider: {enum: [openai, anthropic, ollama]}
+        model: {type: string, minLength: 1, maxLength: 80}
+        replyTo: {type: string, pattern: '^aside_[a-f0-9]{24}$'}
+      additionalProperties: false
+    AsideHistory:
+      type: object
+      required: [items]
+      properties: {items: {type: array, maxItems: 20, items: {$ref: "#/components/schemas/ThreadAside"}}}
+      additionalProperties: false
+    ThreadAside:
+      type: object
+      required: [id, question, answer, provider, model]
+      properties:
+        id: {type: string, pattern: '^aside_[a-f0-9]{24}$'}
+        question: {type: string, minLength: 1, maxLength: 6000}
+        answer: {type: string, minLength: 1, maxLength: 10000}
+        provider: {enum: [openai, anthropic, ollama]}
+        model: {type: string}
+      additionalProperties: false
+    ChatPermissions:
+      type: object
+      required: [mode]
+      properties:
+        mode: {enum: [ask, allow, yolo]}
+      additionalProperties: false
+    ModelCatalog:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            type: object
+            required: [id, label, status, models]
+            properties:
+              id: {enum: [openai, anthropic, ollama]}
+              label: {type: string}
+              status: {enum: [available, not_configured, unavailable]}
+              models: {type: array, uniqueItems: true, items: {type: string, minLength: 1}}
+              truncated: {const: true, description: "Only present when the inventory limit was reached."}
+            additionalProperties: false
+      additionalProperties: false
+    AgentInput:
+      type: object
+      required: [message, tools]
+      properties:
+        message: {type: string, minLength: 1, maxLength: 6000}
+        tools: {type: boolean}
+        provider: {type: string, enum: [openai, anthropic, ollama]}
+        model: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}$"}
+      additionalProperties: false
+    AgentEvent:
+      type: object
+      required: [name, path, output]
+      properties:
+        name: {type: string}
+        path: {type: string}
+        output: {type: string}
+        runId: {type: string, pattern: "^run_[a-f0-9]{24}$"}
+        _links: {$ref: "#/components/schemas/Links"}
+      additionalProperties: false
+    AgentRun:
+      type: object
+      required: [id, sessionId, prompt, provider, model, tools, status, events, error, _links]
+      properties:
+        id: {type: string, pattern: "^turn_[a-f0-9]{24}$"}
+        sessionId: {type: string}
+        prompt: {type: string}
+        provider: {enum: [openai, anthropic, ollama]}
+        model: {type: string}
+        tools: {type: boolean}
+        status: {enum: [ready, working, review, completed, failed, cancelled]}
+        events: {type: array, items: {$ref: "#/components/schemas/AgentEvent"}}
+        error: {type: [string, "null"]}
+        _links: {$ref: "#/components/schemas/Links"}
+      additionalProperties: false
+    CurrentAgentRun:
+      type: object
+      required: [run]
+      properties: {run: {oneOf: [{$ref: "#/components/schemas/AgentRun"}, {type: "null"}]}}
+      additionalProperties: false
     ChatInput:
       type: object
       required: [message]
@@ -1644,7 +2090,7 @@ components:
       properties:
         _links: {allOf: [{$ref: "#/components/schemas/Links"}, {required: [self, session]}]}
         session: {$ref: "#/components/schemas/SessionDetail"}
-        project: {$ref: "#/components/schemas/ProjectDetail"}
+        project: {$ref: "#/components/schemas/NullableProjectDetail"}
         messages:
           type: object
           required: [items, page, _links]
@@ -1664,6 +2110,8 @@ components:
           required: [local, external]
           properties: {local: {const: PostgreSQL}, external: {type: string, minLength: 1, maxLength: 10000}}
         external: {$ref: "#/components/schemas/External"}
+    NullableProjectDetail:
+      anyOf: [{$ref: "#/components/schemas/ProjectDetail"}, {type: "null"}]
     ProjectDetail:
       allOf:
         - {$ref: "#/components/schemas/Project"}
@@ -1704,6 +2152,14 @@ components:
         service: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}, href: {const: "/api"}}}]}
         collection: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
         runtime: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
+        models: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
+        permissions: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
+        setPermissions: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: PUT}}}]}
+        goal: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
+        setGoal: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: PUT}}}]}
+        asides: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
+        askAside: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
+        toolRun: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
         budget: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
         prune: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}, href: {const: "/api/maintenance/prune"}}}]}
         createProject: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
@@ -1720,6 +2176,10 @@ components:
         setMember: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
         context: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
         chat: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
+        agent: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
+        startAgent: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
+        step: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
+        cancel: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
         messages: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
         createMessage: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
         tasks: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}

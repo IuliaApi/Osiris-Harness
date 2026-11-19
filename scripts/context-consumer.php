@@ -14,7 +14,7 @@ try {
         $data = $client->follow($session, 'context');
         $external = $data['external'];
         echo 'Session: ' . $data['session']['title'] . "\n";
-        echo $data['sources']['local'] . ' project: ' . $data['project']['name'] . "\n";
+        echo $data['sources']['local'] . ' project: ' . ($data['project']['name'] ?? '(none)') . "\n";
         echo 'Messages on first page: ' . count($data['messages']['items']) . "\n";
         echo 'Tasks on first page: ' . count($data['tasks']['items']) . "\n";
         echo "External: {$external['source']}; provenance: {$external['provenance']}; status: {$external['status']}\n";

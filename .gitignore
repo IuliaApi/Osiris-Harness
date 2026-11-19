@@ -2,3 +2,4 @@
 .env
 /vendor/
 /backend/vendor/
+__pycache__/

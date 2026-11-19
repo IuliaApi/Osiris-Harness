@@ -36,7 +36,7 @@ final class SessionChat
     }
 
     /** No lock is held during a remote call. An interrupted worker leaves the reservation charged for that UTC day. */
-    private static function reserve(PDO $db, string $user, string $sessionId, string $provider, string $model): string
+    public static function reserve(PDO $db, string $user, string $sessionId, string $provider, string $model): string
     {
         $id = 'call_' . bin2hex(random_bytes(12));
         $day = executeSql($db, "INSERT INTO chat_budgets AS b (user_id,day,reserved) VALUES (?, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date,1) ON CONFLICT (user_id,day) DO UPDATE SET reserved = b.reserved + 1 WHERE b.reserved + b.spent < ? RETURNING day", [$user, self::limit()])->fetchColumn();
@@ -49,7 +49,7 @@ final class SessionChat
         return $id;
     }
 
-    private static function settle(PDO $db, string $id, string $outcome, ?array $turns = null): void
+    public static function settle(PDO $db, string $id, string $outcome, ?array $turns = null): void
     {
         $count = executeSql($db,
             'WITH charged AS (
@@ -60,7 +60,7 @@ final class SessionChat
         if ($count !== 1) { throw new RuntimeException('Dispatch reservation not available'); }
     }
 
-    public static function chat(PDO $db, Auth $auth, WorkspaceRepository $store, string $sessionId, array $body): array
+    public static function parseInput(array $body): array
     {
         if (array_diff(array_keys($body), ['message','provider','model']) || !is_string($body['message'] ?? null) || trim($body['message']) === '' || utf8Length($body['message']) > 6000 || !isRepresentableText($body['message'])) {
             throw new ApiError(422, 'Chat requires a message of 1–6000 characters and accepts only provider and model options', 'validation_error');
@@ -69,18 +69,30 @@ final class SessionChat
         if (!in_array($provider, [...ProviderCredentials::PROVIDERS,'ollama'], true)) { throw new ApiError(422, 'Unknown chat provider', 'validation_error'); }
         $model = array_key_exists('model', $body) ? $body['model'] : AIProvider::modelFor($provider);
         if (!is_string($model) || !AIProvider::validModel($model)) { throw new ApiError(422, 'Invalid model identifier', 'validation_error'); }
-        $user = $auth->user()['id']; $prompt = trim($body['message']);
+        return [trim($body['message']), $provider, $model];
+    }
+
+    public static function credential(PDO $db, string $user, string $provider): ?string
+    {
+        if ($provider === 'ollama') {
+            if (getenv('OSIRIS_OLLAMA_ENABLED') === '0') { throw new ApiError(503, 'Ollama is disabled', 'ai_not_configured'); }
+            return null;
+        }
+        $sealed = executeSql($db, 'SELECT sealed_key FROM provider_credentials WHERE user_id=? AND provider=?', [$user,$provider])->fetchColumn();
+        if ($sealed === false) { throw new ApiError(503, 'No key configured for this account and provider', 'ai_not_configured'); }
+        return ProviderCredentials::unseal($user,$provider,$sealed);
+    }
+
+    public static function chat(PDO $db, Auth $auth, WorkspaceRepository $store, string $sessionId, array $body): array
+    {
+        [$prompt,$provider,$model] = self::parseInput($body);
+        $user = $auth->user()['id'];
         [$id,$key,$history,$session,$project] = inDatabaseTransaction($db, function () use ($db,$auth,$store,$sessionId,$user,$provider,$model) {
             $auth->requireAccess('sessions',$sessionId,'write');
             $session = $store->get('sessions',$sessionId);
             if (($session['status'] ?? '') !== 'active') { throw new ApiError(409, 'Only active sessions can receive chat', 'invalid_session_state'); }
-            $key = null;
-            if ($provider !== 'ollama') {
-                $sealed = executeSql($db, 'SELECT sealed_key FROM provider_credentials WHERE user_id = ? AND provider = ?', [$user,$provider])->fetchColumn();
-                if ($sealed === false) { throw new ApiError(503, 'No key configured for this account and provider', 'ai_not_configured'); }
-                $key = ProviderCredentials::unseal($user,$provider,$sealed);
-            } elseif (getenv('OSIRIS_OLLAMA_ENABLED') === '0') { throw new ApiError(503, 'Ollama is disabled', 'ai_not_configured'); }
-            return [self::reserve($db,$user,$sessionId,$provider,$model), $key, $store->recentConversation($sessionId), $session, $store->get('projects',$session['projectId'])];
+            $key = self::credential($db,$user,$provider);
+            return [self::reserve($db,$user,$sessionId,$provider,$model), $key, ThreadCommands::mainHistory($db,$store,$sessionId,$user), $session, $store->projectForSession($session)];
         });
         try {
             $answer = AIProvider::reply($prompt,$history,$session,$project,$provider,$model,$key);

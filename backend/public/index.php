@@ -24,10 +24,18 @@ register_shutdown_function(static function () use ($requestId, $started, $method
 });
 try {
     $asset = match ($path) {
-        '/', '/login', '/dashboard', '/workspace', '/chat', '/manage', '/api-checks' => ['index.html', 'text/html'],
+        '/', '/login', '/register', '/dashboard', '/workspace', '/chat', '/manage', '/api-checks' => ['index.html', 'text/html'],
         '/assets/workspace.css' => ['workspace.css', 'text/css'],
         '/assets/workspace.js' => ['workspace.js', 'text/javascript'],
         '/assets/api-checks.js' => ['api-checks.js', 'text/javascript'],
+        '/assets/chat-workbench.js' => ['chat-workbench.js', 'text/javascript'],
+        '/assets/thread-messages.js' => ['thread-messages.js', 'text/javascript'],
+        '/assets/command-menu.js' => ['command-menu.js', 'text/javascript'],
+        '/assets/terminal-prompt.js' => ['terminal-prompt.js', 'text/javascript'],
+        '/assets/agent-console.js' => ['agent-console.js', 'text/javascript'],
+        '/assets/desktop-panel.js' => ['desktop-panel.js', 'text/javascript'],
+        '/assets/desktop-panel.css' => ['desktop-panel.css', 'text/css'],
+        '/assets/side-questions.js' => ['side-questions.js', 'text/javascript'],
         default => null,
     };
     if ($asset !== null) {
@@ -52,15 +60,21 @@ try {
     responseMediaType();
     if (str_starts_with($path,'/auth/') || $path === '/auth') {
         $authMethod = match ($path) {
-            '/auth/login','/auth/logout' => 'POST', '/auth/me' => 'GET',
+            '/auth/register','/auth/login','/auth/logout' => 'POST', '/auth/me' => 'GET',
             default => throw new ApiError(404, 'Route not found', 'not_found'),
         };
         if ($method !== $authMethod) { header('Allow: ' . $authMethod); throw new ApiError(405, 'Method not allowed'); }
         if (queryParams() !== []) { throw new ApiError(400, 'Authentication routes take no query parameters'); }
-        if ($path === '/auth/login') {
+        if ($path === '/auth/login' || $path === '/auth/register') {
             Auth::sameOrigin();
             $body = readRequestBody();
-            respond((new Auth(connectWorkspaceDatabase(), $requestId))->login($body));
+            $auth = new Auth(connectWorkspaceDatabase(), $requestId);
+            if ($path === '/auth/register') {
+                $identity = $auth->register($body);
+                header('Location: /auth/me');
+                respond($identity, 201);
+            }
+            respond($auth->login($body));
         }
     }
     $token = Auth::cookieToken();
@@ -70,10 +84,11 @@ try {
     if (!in_array($method,['GET','HEAD','OPTIONS'],true)) { $auth->guardMutation(); }
     if ($path === '/auth/me') { respond($auth->identity()); }
     if ($path === '/auth/logout') { $auth->logout(); http_response_code(204); exit; }
-    if ($path === '/api' || $path === '/api/runtime') {
+    if (in_array($path, ['/api', '/api/runtime', '/api/models'], true)) {
         if ($method !== 'GET') { header('Allow: GET'); throw new ApiError(405, 'Method not allowed'); }
         if (queryParams() !== []) { throw new ApiError(400, 'This endpoint takes no query parameters'); }
         if ($path === '/api') { respond(apiDiscovery($auth)); }
+        if ($path === '/api/models') { respond(ModelCatalog::list($db, $auth)); }
         respond(['harness' => 'Osiris', 'database' => 'PostgreSQL', 'ai' => SessionChat::runtime($db, $auth->user()),
             'capabilities' => ['session_chat' => true, 'database_history' => true, 'shell_execution' => false,
                 'filesystem_access' => false, 'approved_virtual_workspace' => true, 'github_composite' => true],
@@ -99,6 +114,9 @@ try {
     }
     ProviderCredentials::handleRequest($db, $auth, $method, $path);
     WorkspaceToolRuns::handleRequest($db, $auth, $method, $path);
+    ChatPermissions::handleRequest($db, $auth, $method, $path);
+    ThreadCommands::handleRequest($db, $auth, $method, $path);
+    AgentRuns::handleRequest($db, $auth, $method, $path);
     if (preg_match('~^/projects/([^/]+)/members(?:/([^/]+))?$~D', $path, $match)) {
         $auth->membership(rawurldecode($match[1]), isset($match[2]) ? rawurldecode($match[2]) : null, $method);
     }
@@ -155,7 +173,7 @@ try {
             if ($query !== []) { throw new ApiError(400, 'Context resource takes no query parameters'); }
             $session = $store->get('sessions', $id);
             if ($session === null) { throw new ApiError(404, 'Resource not found', 'not_found'); }
-            $project = $store->get('projects', $session['projectId']);
+            $project = $store->projectForSession($session);
             $children = [];
             foreach (['messages', 'tasks'] as $kind) {
                 $collection = $store->list($kind, [], ['sessionId' => $id]);
@@ -166,7 +184,8 @@ try {
             $external = fetchGitHubRepository($project['repositoryUrl'] ?? null);
             respond([
                 '_links' => ['self' => apiLink($path), 'session' => apiLink('/sessions/' . rawurlencode($id))],
-                'session' => apiItem($store, $auth, 'sessions', $session), 'project' => apiItem($store, $auth, 'projects', $project),
+                'session' => apiItem($store, $auth, 'sessions', $session),
+                'project' => $project === null ? null : apiItem($store, $auth, 'projects', $project),
                 ...$children,
                 'external' => $external,
                 'sources' => ['local' => 'PostgreSQL', 'external' => $external['source']],
@@ -191,8 +210,9 @@ try {
         $result['items'] = array_map(fn($row) => apiItem($store, $auth, $type, $row, $query, $include), $result['items']);
         $result['links'] = paginationLinks($query, $result['page']);
         $result['_links'] = pageControls($result['links']);
-        if (($type === 'projects' && $auth->canCreateProject()) ||
-            ($fixed !== [] && $auth->can(isset($fixed['projectId']) ? 'projects' : 'sessions', reset($fixed), 'write'))) {
+        $canCreate = $fixed === [] ? $auth->canCreateWorkspaceResources()
+            : $auth->can(isset($fixed['projectId']) ? 'projects' : 'sessions', reset($fixed), 'write');
+        if ($canCreate) {
             $result['_links']['create'] = apiLink($path, 'POST');
         }
         respond($result);

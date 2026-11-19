@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// Offline operator tool; no HTTP registration, default password or password in argv.
+// Operator-only provisioning and password resets. Never read a password from argv.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once dirname(__DIR__) . '/backend/bootstrap.php';
 

@@ -182,7 +182,7 @@ class Contract:
                 require(headers.get('allow'), 'missing Allow header')
             if 200 <= status < 300 and 'etag' in headers and isinstance(value, dict) and 'version' in value:
                 require(headers['etag'] == f'"{value["version"]}"', 'ETag differs from version')
-            if status == 201:
+            if status == 201 and '_links' in value:
                 require(headers.get('location') == value['_links']['self']['href'], 'Location differs from self link')
             if (method, split.path, status) == ('GET', '/sessions', 200):
                 require(isinstance(value, dict if split.query else list), 'wrong legacy/paged list form')

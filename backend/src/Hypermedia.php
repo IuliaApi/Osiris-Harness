@@ -11,10 +11,11 @@ function apiDiscovery(Auth $auth): array
     $links = [
         'self' => apiLink('/api'), 'me' => apiLink('/auth/me'), 'logout' => apiLink('/auth/logout', 'POST'),
         'projects' => apiLink('/projects'), 'sessions' => apiLink('/sessions'),
-        'runtime' => apiLink('/api/runtime'), 'budget' => apiLink('/api/budget'),
+        'runtime' => apiLink('/api/runtime'), 'models' => apiLink('/api/models'), 'budget' => apiLink('/api/budget'),
     ];
-    if ($auth->canCreateProject()) {
+    if ($auth->canCreateWorkspaceResources()) {
         $links['createProject'] = apiLink('/projects', 'POST');
+        $links['createSession'] = apiLink('/sessions', 'POST');
         $links['credentialOpenai'] = apiLink('/api/credentials/openai', 'PUT');
         $links['credentialAnthropic'] = apiLink('/api/credentials/anthropic', 'PUT');
     }
@@ -46,14 +47,26 @@ function resourceLinks(string $type, array $item, Auth $auth): array
             $links['setVisibility'] = apiLink($self, 'PATCH');
         }
     } elseif ($type === 'sessions') {
-        $links['project'] = apiLink('/projects/' . rawurlencode($item['projectId']));
+        if ($item['projectId'] !== null) {
+            $links['project'] = apiLink('/projects/' . rawurlencode($item['projectId']));
+        }
         foreach (['context', 'messages', 'tasks'] as $rel) { $links[$rel] = apiLink($self . '/' . $rel); }
         $links['toolRuns'] = apiLink($self . '/tool-runs');
+        $links['agent'] = apiLink($self . '/agent');
+        $links['permissions'] = apiLink($self . '/permissions');
+        $links['goal'] = apiLink($self . '/goal');
+        $links['asides'] = apiLink($self . '/asides');
         if ($write) {
+            $links['setPermissions'] = apiLink($self . '/permissions', 'PUT');
             $links['createMessage'] = apiLink($self . '/messages', 'POST');
             $links['createTask'] = apiLink($self . '/tasks', 'POST');
             $links['requestTool'] = apiLink($self . '/tool-runs', 'POST');
-            if ($item['status'] === 'active') { $links['chat'] = apiLink($self . '/chat', 'POST'); }
+            if ($item['status'] === 'active') {
+                $links['chat'] = apiLink($self . '/chat', 'POST');
+                $links['startAgent'] = apiLink($self . '/agent', 'POST');
+                $links['setGoal'] = apiLink($self . '/goal', 'PUT');
+                $links['askAside'] = apiLink($self . '/asides', 'POST');
+            }
         }
     } else {
         $links['session'] = apiLink($session);
@@ -67,8 +80,9 @@ function apiItem(WorkspaceRepository $store, Auth $auth, string $type, array $it
     if ($include !== []) {
         $composed = $store->composeSession($item, $include);
         foreach ($include as $part) {
-            if ($part === 'project') { $out[$part] = apiItem($store, $auth, 'projects', $composed[$part]); }
-            else {
+            if ($part === 'project') {
+                $out[$part] = $composed[$part] === null ? null : apiItem($store, $auth, 'projects', $composed[$part]);
+            } else {
                 $out[$part] = array_map(fn($child) => apiItem($store, $auth, $part, $child), $composed[$part]);
                 $out[$part . 'Page'] = $composed[$part . 'Page'];
             }

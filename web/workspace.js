@@ -1,6 +1,8 @@
 import { createApiChecks } from './api-checks.js';
+import { createChatWorkbench } from './chat-workbench.js';
+import { initCommandMenu } from './command-menu.js';
 const $=id=>document.getElementById(id);
-const appState={name:'',csrf:'',root:null,runtime:null,route:'',projects:[],sessions:[],current:null,detail:null,links:{},sending:false};
+const appState={name:'',csrf:'',root:null,runtime:null,route:'',projects:[],sessions:[],links:{}};
 const views={'/dashboard':['dashboard','Dashboard'],'/workspace':['sessions','Sessions'],'/chat':['chat','Chat'],'/manage':['manage','Manage'],'/api-checks':['api-checks','API Checks']};
 const rel=(resource,name,method)=>resource?._links?.[name]?.method===method?resource._links[name]:null;
 function localPath(path){
@@ -53,7 +55,7 @@ async function request(method, path, payload, headers) {
   }
   return result.data;
 }
-function projectName(id){return appState.projects.find(p=>p.id===id)?.name||id||'Unassigned';}
+function projectName(id){return id===null?'Private chat':appState.projects.find(p=>p.id===id)?.name||id;}
 function getPath(){return views[location.pathname]?location.pathname:'/dashboard';}
 function go(path,replace=false){
   if(!appState.name)path='/login';
@@ -61,20 +63,41 @@ function go(path,replace=false){
   return renderRoute();
 }
 function visible(node,show){node.classList.toggle('hidden',!show);}
+let routeRevision = 0;
 async function renderRoute(){
+  const revision = ++routeRevision;
+  if (appState.route === '/chat') workbench.leave();
   const logged=Boolean(appState.name);
   visible($('login-screen'),!logged);visible($('app'),logged);
-  if(!logged){if(location.pathname!=='/login')history.replaceState({},'','/login');return;}
+  if(!logged){
+    const registering=location.pathname==='/register';
+    if(!registering&&location.pathname!=='/login')history.replaceState({},'','/login');
+    const action = registering ? 'Create account' : 'Sign in';
+    document.title = `${action} — Osiris`;
+    $('auth-submit').textContent = action;
+    $('auth-switch').textContent = registering ? 'Back to sign in' : 'Create account';
+    $('auth-switch').href = registering ? '/login' : '/register';
+    $('auth-password').autocomplete = registering ? 'new-password' : 'current-password';
+    if (registering) {
+      $('auth-name').pattern = String.raw`[A-Za-z0-9_\-]{1,100}`;
+      $('auth-name').title = 'Use letters, digits, underscores or hyphens.';
+    } else {
+      $('auth-name').removeAttribute('pattern');
+      $('auth-name').removeAttribute('title');
+    }
+    return;
+  }
+  document.title='Osiris — workspace';
   const path=getPath();if(path!==location.pathname)history.replaceState({},'',path);
   appState.route=path;
   $('username').textContent=appState.name;$('avatar').textContent=appState.name[0].toUpperCase();$('greeting').textContent=`Welcome back, ${appState.name}`;
   for(const [p,[id]] of Object.entries(views))visible($(id+'-view'),p===path);
   document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===path));$('page-label').textContent=views[path][1];
   try{
-    await refreshData();if(appState.route!==path)return;
+    await refreshData();if(revision!==routeRevision)return;
     if(path==='/dashboard')renderDashboard();
     if(path==='/workspace')await loadSessions();
-    if(path==='/chat'){renderChatSessions();await loadChat();}
+    if(path==='/chat')await workbench.enter();
     if(path==='/manage')await renderManage();
   }catch(e){notify(e.message);}
 }
@@ -85,11 +108,15 @@ async function refreshData(){
     follow(queryLink(rel(root,'sessions','GET'),{limit:100,sort:'updatedAt',order:'desc'})),
     follow(rel(root,'runtime','GET'))]);
   Object.assign(appState,{root,runtime,projects:projects.items,sessions:sessions.items,projectTotal:projects.page.total,sessionTotal:sessions.page.total});
+  appState.nextSessions = rel(sessions,'next','GET');
   $('api-state').textContent='API connected';$('api-dot').classList.remove('off');
   const writable = writableProjects();
-  for (const button of document.querySelectorAll('[data-action]')) {
-    visible(button, button.dataset.action === 'new-project' ? rel(root, 'createProject', 'POST') : writable.length > 0);
-  }
+  const available = {
+    'new-chat': rel(root, 'createSession', 'POST'),
+    'new-project': rel(root, 'createProject', 'POST'),
+    'new-session': writable.length > 0,
+  };
+  for (const button of document.querySelectorAll('[data-action]')) visible(button, available[button.dataset.action]);
   apiChecks.updateChoices(writable, appState.sessions);
 }
 function writableProjects(){return appState.projects.filter(p=>rel(p,'createSession','POST'));}
@@ -103,40 +130,8 @@ async function loadSessions(link){const data=await follow(link||listLink());appS
   const p=data.page;$('page-info').textContent=`${p.total} sessions · ${p.total?p.offset+1:0}–${Math.min(p.offset+data.items.length,p.total)}`;$('previous-page').disabled=!rel(data,'previous','GET');$('next-page').disabled=!rel(data,'next','GET');
 }
 function button(label,fn){const b=el('button','btn-os',label);b.type='button';b.onclick=async()=>{b.disabled=true;try{await fn();}catch(e){notify(e.message);}finally{b.disabled=false;}};return b;}
-function renderChatSessions(){
-  const root=$('chat-session-list');root.replaceChildren();
-  for(const s of appState.sessions){
-    const b=button(s.title,()=>selectSession(s));b.className='chat-session'+(appState.current?.id===s.id?' selected':'');b.append(el('small','truncate',projectName(s.projectId)));root.append(b);
-  }
-  if(!appState.sessions.length)empty('chat-session-list','No sessions available.');
-}
-async function openChat(s){appState.current=s;return go('/chat');}
-async function selectSession(s){appState.current=s;renderChatSessions();await loadChat();}
-function messageNode(m){const block=el('article','message '+(m.role==='user'?'user':'assistant'));block.append(el('div','message-label',m.role),el('div','message-text',m.content));return block;}
-async function loadChat(){
-  const s=appState.current,box=$('chat-history');
-  appState.detail=null;for(const id of ['archive-session','delete-session','chat-form'])visible($(id),false);
-  $('chat-title').textContent=s?.title||'Select a session';$('chat-project').textContent='';$('chat-status').textContent='—';empty('chat-history',s?'Loading conversation…':'Choose a session to open its conversation.');
-  if(!s)return;
-  const d=await follow(queryLink(rel(s,'self','GET'),{include:'project,messages'}));
-  if(d.messagesPage?.hasMore){
-    const latest=await follow(queryLink(rel(d,'messages','GET'),{sort:'createdAt',order:'desc',limit:25}));
-    d.messages=latest.items.reverse();
-  }
-  if(appState.current!==s)return;
-  appState.detail=d;$('chat-title').textContent=d.title;$('chat-project').textContent=d.project?.name||projectName(d.projectId);$('chat-status').textContent=d.status;
-  visible($('archive-session'),d.status==='active'&&rel(d,'update','PATCH'));visible($('delete-session'),rel(d,'delete','DELETE'));visible($('chat-form'),d.status==='active'&&rel(d,'chat','POST'));
-  $('message-text').disabled=appState.sending;$('send-message').disabled=appState.sending;$('chat-hint').textContent='Provider and model are selected in Manage.';
-  box.replaceChildren();
-  if(d.messagesPage?.hasMore)box.append(el('p','hint','Showing the latest 25 messages. Open Manage → Sessions → Messages for earlier pages.'));
-  if(!d.messages?.length)empty('chat-history','No messages yet.');else for(const m of d.messages)box.append(messageNode(m));box.scrollTop=box.scrollHeight;
-}
-async function sendChat(event){
-  event.preventDefault();const d=appState.detail,text=$('message-text').value.trim();if(!text||appState.sending)return;
-  const settings=modelChoice();if(!settings)throw Error('No provider available. Check Manage → Model settings.');
-  appState.sending=true;$('send-message').disabled=true;$('message-text').disabled=true;$('chat-hint').textContent='Waiting for provider…';
-  try{await follow(rel(d,'chat','POST'),{message:text,...settings});$('message-text').value='';}
-  finally{appState.sending=false;await loadChat();}
+function openChat(session) {
+  return go('/chat?thread=' + encodeURIComponent(session.id));
 }
 function showModal(id){$(id).classList.add('fallback-open');$(id).setAttribute('aria-hidden','false');$(id).querySelector('input').focus();}
 function hideModal(id){$(id).classList.remove('fallback-open');$(id).setAttribute('aria-hidden','true');}
@@ -155,8 +150,6 @@ async function createProject(e){
   for(const [key,id] of [['language','project-language'],['repositoryUrl','project-url']])if($(id).value.trim())payload[key]=$(id).value.trim();
   await follow(rel(appState.root,'createProject','POST'),payload);hideModal('project-modal');$('project-form').reset();await renderRoute();notify('Project created.');
 }
-async function archiveSession(){if(confirm('Archive this session?')){await follow(rel(appState.detail,'update','PATCH'),{status:'archived'});await renderRoute();}}
-async function deleteSession(){if(confirm('Delete this session and all its messages and tasks?')){await follow(rel(appState.detail,'delete','DELETE'));appState.current=null;await renderRoute();}}
 
 // Management uses item and collection affordances; no role checks or writable URLs live here.
 let manager=null;
@@ -287,28 +280,88 @@ async function renderManage(){
 
 function bind(id,event,handler){$(id).addEventListener(event,async e=>{try{await handler(e);}catch(error){notify(error.message);}});}
 function signedIn(data){appState.name=data.user.username;appState.csrf=data.csrfToken;appState.userId=data.user.id;}
+const passwordEncoder = new TextEncoder();
+function updatePasswordChecks() {
+  const input = $('auth-password');
+  const bytes = passwordEncoder.encode(input.value).byteLength;
+  $('password-rules').hidden = bytes === 0;
+  $('password-min').checked = bytes >= 12;
+  $('password-max').checked = bytes <= 72;
+  if (bytes) input.setAttribute('aria-describedby', 'password-rules');
+  else input.removeAttribute('aria-describedby');
+  return bytes >= 12 && bytes <= 72;
+}
+
+async function submitAuth(event, landing) {
+  event.preventDefault();
+  const registering = location.pathname === '/register';
+  const name = $('auth-name'), password = $('auth-password'), error = $('auth-error');
+  error.textContent = '';
+  if (registering && !updatePasswordChecks()) {
+    password.focus();
+    return;
+  }
+  if (registering && password.value.includes('\0')) {
+    error.textContent = 'Remove the null character from your password.';
+    password.focus();
+    return;
+  }
+  const submit = $('auth-submit');
+  if (submit.disabled) return;
+  submit.disabled = true;
+  try {
+    const credentials = {username: registering ? name.value : name.value.trim(), password: password.value};
+    signedIn(await request('POST', registering ? '/auth/register' : '/auth/login', credentials));
+    $('auth-form').reset();
+    updatePasswordChecks();
+    await go(registering ? '/dashboard' : landing, true);
+  } catch (err) {
+    if (err.status === 409 && registering) {
+      error.textContent = 'Username already taken.';
+      name.focus();
+    } else if (err.status === 401 && !registering) {
+      error.textContent = 'Incorrect username or password.';
+      password.value = '';
+      updatePasswordChecks();
+      password.focus();
+    } else {
+      error.textContent = err.message;
+    }
+  } finally {
+    submit.disabled = false;
+  }
+}
 async function init(){
   for(const b of document.querySelectorAll('[data-action]'))visible(b,false);
-  visible($('chat-form'),false);bind('delete-session','click',deleteSession);
+  visible($('chat-form'),false);
+  bind('delete-session','click',workbench.remove);
+  bind('rename-thread','click',workbench.rename);
+  initCommandMenu(() => !appState.name ? [] : [
+    ...workbench.commands(),
+    ...Object.entries(views).map(([path, [, label]]) => ({label: `Open ${label}`, run: () => go(path)})),
+    {label:'Log out', run:() => $('logout').click()},
+  ], notify);
   bind('checks-refresh','click',async()=>{await refreshData();notify('API check data refreshed.');});
   for(const b of document.querySelectorAll('[data-bs-dismiss="modal"]'))b.onclick=()=>hideModal(b.closest('.modal').id);
   for(const b of document.querySelectorAll('[data-route]'))b.onclick=()=>go(b.dataset.route);
-  for(const b of document.querySelectorAll('[data-action]'))b.onclick=()=>b.dataset.action==='new-project'?showModal('project-modal'):openNewSession();
-  const landing=getPath();
-  bind('login-form','submit',async e=>{
-    e.preventDefault();$('login-error').textContent='';
-    try{signedIn(await request('POST','/auth/login',{username:$('login-name').value.trim(),password:$('login-password').value}));$('login-form').reset();await go(landing,true);}
-    catch(err){$('login-error').textContent=err.message;$('login-password').value='';$('login-password').focus();}
-  });
-  bind('logout','click',async()=>{await follow(rel(appState.root,'logout','POST'));location.replace('/login');});
+  for(const b of document.querySelectorAll('[data-action="new-chat"]'))b.onclick=()=>workbench.create().catch(error=>notify(error.message));
+  for(const b of document.querySelectorAll('[data-action="new-project"]'))b.onclick=()=>showModal('project-modal');
+  for(const b of document.querySelectorAll('[data-action="new-session"]'))b.onclick=openNewSession;
+  const landing = views[location.pathname] ? location.pathname + location.search : '/dashboard';
+  $('auth-password').addEventListener('input', updatePasswordChecks);
+  bind('auth-form','submit',event => submitAuth(event, landing));
+  bind('logout','click',async()=>{await follow(rel(appState.root,'logout','POST'));workbench.forgetTab();location.replace('/login');});
   bind('filter-form','submit',e=>{e.preventDefault();return loadSessions();});
   for(const [id,key] of [['previous-page','previous'],['next-page','next']])bind(id,'click',()=>loadSessions(appState.links[key]));
-  bind('chat-form','submit',sendChat);bind('message-text','keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!$('send-message').disabled)$('chat-form').requestSubmit();}});
-  bind('session-form','submit',createSession);bind('project-form','submit',createProject);bind('archive-session','click',archiveSession);bind('refresh-sessions','click',renderRoute);
+  bind('chat-form','submit',workbench.send);
+  bind('session-form','submit',createSession);bind('project-form','submit',createProject);bind('archive-session','click',workbench.archive);bind('refresh-sessions','click',renderRoute);
   window.addEventListener('popstate',renderRoute);
   window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
-  try{signedIn(await request('GET','/auth/me'));}catch(e){if(e.status!==401)$('login-error').textContent=e.message;}
+  try{signedIn(await request('GET','/auth/me'));}catch(e){
+    if(e.status!==401)$('auth-error').textContent=e.message;
+  }
   await renderRoute();
 }
 const apiChecks = createApiChecks({ appState, rel, queryLink, fetchResponse, refreshData });
+const workbench = createChatWorkbench({state:appState, follow, rel, queryLink, go, projectName, modelChoice, notify, button});
 init().catch(e=>notify(e.message));
