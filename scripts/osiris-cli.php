@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 /**
  * Osiris CLI: real HTTP consumer of the same PostgreSQL-backed chat endpoint.
- * php scripts/osiris-cli.php ses_101 [openai|anthropic|ollama] [model]
+ * php scripts/osiris-cli.php ses_101 [provider] [model]
  * Set OSIRIS_USERNAME and OSIRIS_PASSWORD in this process's environment.
  */
 require_once __DIR__ . '/LocalClient.php';
 $sessionId = $argv[1] ?? 'ses_101';
 $selected = $argv[2] ?? null;
 $model = $argv[3] ?? null;
-if (!preg_match('/\A[A-Za-z0-9_-]{1,100}\z/D', $sessionId) ||
-    ($selected !== null && !in_array($selected, ['openai', 'anthropic', 'ollama'], true))) {
-    fwrite(STDERR, "Usage: php scripts/osiris-cli.php SESSION_ID [openai|anthropic|ollama] [MODEL]\n");
+if (!preg_match('/\A[A-Za-z0-9_-]{1,100}\z/D', $sessionId)) {
+    fwrite(STDERR, "Usage: php scripts/osiris-cli.php SESSION_ID [PROVIDER] [MODEL]\n");
     exit(2);
 }
 $chat = static function (LocalClient $client) use ($sessionId, $selected, $model): void {
@@ -22,6 +21,7 @@ $chat = static function (LocalClient $client) use ($sessionId, $selected, $model
     if (($session['_links']['chat']['method'] ?? null) !== 'POST') { throw new RuntimeException('Chat is not available for this session and account.'); }
     $providers = array_column($runtime['ai']['providers'], null, 'id');
     $selected ??= $runtime['ai']['defaultProvider'];
+    if (!isset($providers[$selected])) { throw new RuntimeException('Available providers: ' . implode(', ',array_keys($providers))); }
     $model ??= $providers[$selected]['defaultModel'];
     echo "\nOSIRIS — AI chat terminal (client of the PHP API)\n";
     echo "Session: {$session['title']} / {$session['id']}\n";
@@ -33,21 +33,23 @@ $chat = static function (LocalClient $client) use ($sessionId, $selected, $model
         if ($line === false) { echo "\n"; break; }
         $text = trim($line);
         if (in_array($text, ['/exit', '/quit'], true)) { break; }
-        if ($text === '/help') { echo "Chat text or /provider openai|anthropic|ollama, /model MODEL, /status, /exit. No shell commands are executed.\n"; continue; }
+        if ($text === '/help') { echo "Chat text or /provider " . implode('|',array_keys($providers)) . ", /model MODEL, /status, /exit.\n"; continue; }
         if ($text === '/status') { echo "Provider: $selected / $model; configured: " . ($providers[$selected]['configured'] ? 'yes (connection unverified)' : 'no') . "\n"; continue; }
         if (str_starts_with($text, '/provider ')) {
             $choice = trim(substr($text, 10));
-            if (!isset($providers[$choice])) { echo "Unknown provider. Use openai, anthropic or ollama.\n"; continue; }
+            if (!isset($providers[$choice])) { echo "Available providers: " . implode(', ',array_keys($providers)) . "\n"; continue; }
             $selected = $choice; $model = $providers[$choice]['defaultModel'];
             echo "Selected $selected / $model\n"; continue;
         }
         if (str_starts_with($text, '/model ')) {
             $newModel = trim(substr($text, 7));
-            if (!preg_match('/\A[A-Za-z0-9][A-Za-z0-9_.:\/-]{0,79}\z/D', $newModel)) { echo "Invalid model identifier.\n"; continue; }
+            // The API enforces the provider-specific model grammar and eligibility.
+            if ($newModel === '') { echo "Use /model MODEL.\n"; continue; }
             $model = $newModel; echo "Model: $model\n"; continue;
         }
         if ($text === '') { continue; }
         if (str_starts_with($text, '/')) { echo "Unknown command. Type /help.\n"; continue; }
+        if ($model === '') { echo "Use /model MODEL to select a model for $selected first.\n"; continue; }
         try {
             $result = $client->follow($session, 'chat', 'POST',
                 ['message' => $text, 'provider' => $selected, 'model' => $model]);

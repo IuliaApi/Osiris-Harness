@@ -2,6 +2,8 @@
 
 Sign in and open **API Checks** at `/api-checks`. These buttons send requests to the running API with your account's permissions. Each result shows the URL, HTTP status, response type, request ID and body. Use synthetic data: **Create, rename and read** leaves a session in the selected project.
 
+An expected failure stays in the transcript. Use its error-details link to open the same recovery page that an ordinary failed workspace action would show. Opening that page never repeats the API request.
+
 | Action | What it checks |
 | --- | --- |
 | Read sessions | Reads the session list, follows an item if one is visible and checks that a missing item returns `404`. |

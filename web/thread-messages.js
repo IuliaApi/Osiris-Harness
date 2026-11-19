@@ -37,17 +37,17 @@ function* messageParts(text) {
 }
 
 export function createMessageRenderer({notify}) {
+  function copyButton(label, content, feedback) {
+    const copy = button(label, async () => {
+      try { await copyText(content); if (copy.isConnected) notify(feedback); }
+      catch (error) { if (copy.isConnected) notify(error.message); }
+    });
+    return copy;
+  }
   function codeBlock(language, content) {
     const block = element('section', 'thread-code');
     const bar = element('div', 'thread-code-bar');
-    bar.append(element('span', '', language || 'Code'), button('Copy code', async () => {
-      try {
-        await copyText(content);
-        if (block.isConnected) notify('Code copied.');
-      } catch (err) {
-        if (block.isConnected) notify(err.message);
-      }
-    }));
+    bar.append(element('span', '', language || 'Code'), copyButton('Copy code', content, 'Code copied.'));
     const pre = element('pre');
     pre.append(element('code', '', content));
     block.append(bar, pre);
@@ -58,7 +58,13 @@ export function createMessageRenderer({notify}) {
     const user = message.role === 'user';
     const block = element('article', `message ${user ? 'user' : message.role === 'tool' ? 'terminal-tool' : 'assistant'}`);
     if (message.agentEvents) block.append(...message.agentEvents.map(toolLine));
-    block.append(element('div', 'message-label', user ? 'you ❯' : message.role === 'assistant' ? 'model' : message.role));
+    const label = element('div', 'message-label', user ? 'you ❯' : message.role === 'assistant' ? 'model' : message.role);
+    if (message.role === 'assistant') {
+      const copy = copyButton('Copy reply', message.content, 'Model reply copied.');
+      copy.className = 'subtle-link message-copy';
+      label.append(copy);
+    }
+    block.append(label);
     for (const part of messageParts(message.content)) {
       block.append(part.language === undefined ? element('div', 'message-text', part.text) : codeBlock(part.language, part.text));
     }

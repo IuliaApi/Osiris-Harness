@@ -21,8 +21,10 @@ export function createSideQuestions({follow, rel, getChoice}) {
   async function submit(v, text, replyTo = null) {
     const link = rel(v.thread, 'askAside', 'POST');
     if (!link || !text || v.busy) return;
+    let choice;
+    try { choice = getChoice(); }
+    catch (error) { v.status = error.message; render(); return; }
     v.busy = true;
-    const choice = getChoice();
     v.status = `Thinking · ${choice.provider}/${choice.model}`;
     render();
     try {
@@ -32,7 +34,9 @@ export function createSideQuestions({follow, rel, getChoice}) {
       question.value = '';
       v.status = '';
       list(v);
-    } catch (e) { if (view === v) v.status = e.message; }
+    } catch (e) {
+      if (view === v) v.status = `${e.message} Reopen side questions to check saved answers before sending again.`;
+    }
     finally { if (view === v) { v.busy = false; render(); } }
   }
   async function open(thread, text) {

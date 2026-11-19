@@ -70,7 +70,13 @@ services:
       context: .
       dockerfile: ai-router/Dockerfile
     environment:
+      HOME: /tmp/osiris-isolated
       OSIRIS_AI_ROUTER_KEY_FILE: /run/osiris/router.key
+      OSIRIS_LM_STUDIO_PORT: ${OSIRIS_LM_STUDIO_PORT:-}
+      OSIRIS_LLAMA_CPP_PORT: ${OSIRIS_LLAMA_CPP_PORT:-}
+      OSIRIS_VLLM_PORT: ${OSIRIS_VLLM_PORT:-}
+      OSIRIS_LITELLM_PORT: ${OSIRIS_LITELLM_PORT:-}
+      OSIRIS_BIFROST_PORT: ${OSIRIS_BIFROST_PORT:-}
     volumes:
       - type: bind
         source: ./.local/router.key

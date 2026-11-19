@@ -19,7 +19,7 @@ function setOptions(select, items) {
   return select.value !== selected;
 }
 
-export function createApiChecks({ appState, rel, queryLink, fetchResponse, refreshData }) {
+export function createApiChecks({ appState, rel, queryLink, fetchResponse, refreshData, addErrorLink }) {
   const sessionsLink = () => rel(appState.root, 'sessions', 'GET');
   const nextButton = byId('check-next');
   let nextPage = null;
@@ -126,6 +126,8 @@ export function createApiChecks({ appState, rel, queryLink, fetchResponse, refre
     state.className = 'check-state';
     state.textContent = 'Running…';
     output.classList.add('hidden');
+    const links = panel.querySelector('.api-error-links');
+    links.replaceChildren();
     const notes = [];
     const request = async (link, status, { body, accept = 'application/json' } = {}) => {
       if (!link) throw new Error('The API did not advertise the required action.');
@@ -133,6 +135,7 @@ export function createApiChecks({ appState, rel, queryLink, fetchResponse, refre
       try { result = await fetchResponse(link.method, link.href, body, accept); }
       catch (error) { throw new Error(`${link.method} ${link.href}: ${error.message}`); }
       notes.push(formatResponse(link.method, result));
+      if (!result.ok) addErrorLink(links, result);
       expect(result.status === status, `Expected HTTP ${status}, received ${result.status}.`);
       expect(result.requestId, 'The response did not include an X-Request-Id.');
       const media = result.contentType.split(';')[0].trim().toLowerCase();
@@ -176,9 +179,13 @@ export function createApiChecks({ appState, rel, queryLink, fetchResponse, refre
     state.className = 'check-state';
     state.textContent = 'Not run';
     panel.querySelector('pre').classList.add('hidden');
+    panel.querySelector('.api-error-links').replaceChildren();
   }
   for (const [id, check] of Object.entries(checks)) {
     const panel = byId(id);
+    const links = document.createElement('div');
+    links.className = 'api-error-links';
+    panel.querySelector('pre').after(links);
     panel.querySelector('[data-run-check]').onclick = () => run(panel, check);
     panel.oninput = () => resetResult(panel);
   }

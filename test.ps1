@@ -8,6 +8,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 $prefix = 'osiris-qa-' + [guid]::NewGuid().ToString('N')
 $db = "$prefix-db"; $api = "$prefix-api"; $runner = "$prefix-runner"
 $appImage = "${prefix}:app"; $qaImage = "${prefix}:qa"; $unitImage = "${prefix}:unit"
+$routerImage = "${prefix}:router"
 $password = 'QA-' + [guid]::NewGuid().ToString('N')
 $dbUrl = 'postgres://osiris_dev:lab-local-only@db:5432/'
 $rolePassword = [guid]::NewGuid().ToString('N')
@@ -17,6 +18,7 @@ $keyBytes = [byte[]]::new(32)
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
 try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
 $labKey = [Convert]::ToBase64String($keyBytes)
+$routerKey = [Convert]::ToBase64String(([guid]::NewGuid().ToByteArray() + [guid]::NewGuid().ToByteArray()))
 $containers = @()
 $images = @()
 $networkCreated = $false
@@ -60,6 +62,13 @@ try {
     $images += $qaImage
     Invoke-LabDocker @('network','create','--internal',$prefix) | Out-Null
     $networkCreated = $true
+    Invoke-LabDocker @('build','-q','-f','ai-router/Dockerfile','-t',$routerImage,'.') | Out-Host
+    $images += $routerImage
+    Invoke-LabDocker @('run','--rm','--network','none','-e','HOME=/tmp/test-home',$routerImage,'bun','test')
+    Invoke-LabDocker @('run','-d','--network',$prefix,'--network-alias','ai-router','--name',"$prefix-router",
+        '-e','HOME=/tmp/test-home','-e','OSIRIS_AI_ROUTER_KEY_FILE=/tmp/service.key','-e',"QA_SERVICE_KEY=$routerKey",
+        $routerImage,'sh','-ec','umask 077; printf %s "$QA_SERVICE_KEY" > /tmp/service.key; unset QA_SERVICE_KEY; exec bun run server.ts') | Out-Null
+    $containers += "$prefix-router"
     $dbMount = "type=bind,src=$PSScriptRoot/database,dst=/fixtures,readonly"
     Invoke-LabDocker @('run','-d','--name',$db,'--network',$prefix,'--network-alias','db',
         '--mount',$dbMount,'--tmpfs','/var/lib/postgresql/data',
@@ -107,6 +116,8 @@ try {
         $port++
     }
     if ($Browser) { Provision $api usr_qa_browser qa_browser owner }
+    Invoke-LabDocker @('exec','-d','-e','OSIRIS_AI_ROUTER=1','-e','OSIRIS_AI_ROUTER_KEY_FILE=/tmp/service.key','-e',"QA_SERVICE_KEY=$routerKey",$api,
+        'sh','-ec','umask 077; printf %s "$QA_SERVICE_KEY" > /tmp/service.key; unset QA_SERVICE_KEY; exec php -S 0.0.0.0:8096 -t backend/public backend/public/index.php')
     # This server alone permits Ollama, through the private synthetic HTTP double.
     Invoke-LabDocker @('exec','-d','-e','OSIRIS_OLLAMA_ENABLED=1','-e','OSIRIS_DAILY_CHAT_LIMIT=9','-e','http_proxy=http://qa-runner:11435',
         '-e','no_proxy=','-e','NO_PROXY=','-e','PHP_CLI_SERVER_WORKERS=2',$api,'php','-S','0.0.0.0:8095','-t','backend/public','backend/public/index.php')

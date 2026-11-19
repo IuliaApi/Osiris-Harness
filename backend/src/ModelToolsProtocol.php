@@ -76,6 +76,14 @@ final class ModelToolsProtocol
     {
         $parts = []; $calls = [];
         switch ($provider) {
+            case 'router':
+                $parts[] = self::text($response['text'] ?? null);
+                if (!is_array($response['calls'] ?? null) || !array_is_list($response['calls'])) { throw self::invalid(); }
+                foreach ($response['calls'] as $call) {
+                    if (!$call instanceof stdClass) { throw self::invalid(); }
+                    self::addCall($calls, $allowCalls, $call->id ?? null, $call->name ?? null, $call->arguments ?? null);
+                }
+                break;
             case 'openai':
                 if (($response['status'] ?? '') !== 'completed' || !is_array($response['output'] ?? null)) { throw self::invalid(); }
                 foreach ($response['output'] as $item) {

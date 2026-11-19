@@ -3,17 +3,22 @@ import { createAgentConsole } from './agent-console.js';
 import { copyText, createTerminalPrompt } from './terminal-prompt.js';
 import { createDesktopPanel } from './desktop-panel.js';
 import { createSideQuestions } from './side-questions.js';
+import { validChatModel } from './model-choice.js';
 
 const byId = id => document.getElementById(id);
 const threadUrl = id => `/chat?thread=${encodeURIComponent(id)}`;
-const validModel = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}$/.test(value);
+const starters = [
+  ['Debug a problem', 'Help me debug this issue. Here is what I expected and what happened: '],
+  ['Explain some code', 'Explain what this code does, step by step: '],
+  ['Plan a change', 'Help me break this feature into small implementation steps: '],
+];
 const modes = new Map([
   ['ask', ['Ask', 'Ask before every write.']],
   ['allow', ['Allow', 'Create new files automatically. Ask before replacing existing files.']],
   ['yolo', ['YOLO', 'Apply valid file writes and edits without asking.']],
 ]);
 
-export function createChatWorkbench({state, follow, rel, queryLink, go, projectName, modelChoice, notify, button}) {
+export function createChatWorkbench({state, follow, rel, queryLink, go, projectName, modelChoice, openProviderSettings, notify, button}) {
   const {messageNode} = createMessageRenderer({notify});
   const editor = byId('message-text'), permissions = byId('thread-permissions');
   const picker = byId('thread-picker'), pickerList = byId('picker-list'), pickerSearch = byId('picker-search');
@@ -28,19 +33,33 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
   let pickerView = null;
   const agent = createAgentConsole({follow, rel, changed:composerStatus, reloadHistory, scroll});
   const desktop = createDesktopPanel();
-  const sides = createSideQuestions({follow, rel, getChoice:() => choice});
+  const sides = createSideQuestions({follow, rel, getChoice:requireModel});
   const tabPrefix = () => `osiris:threads:${state.userId}:`;
   const draftKey = id => `${tabPrefix()}draft:${id}`;
   const modelKey = id => `${tabPrefix()}model:${id}`;
   const toolsKey = id => `${tabPrefix()}tools:${id}`;
-  const getDraft = id => sessionStorage.getItem(draftKey(id)) || '';
-  function setDraft(id, value) {
-    if (value) sessionStorage.setItem(draftKey(id), value);
-    else sessionStorage.removeItem(draftKey(id));
+  // If the browser denies storage or has reached its quota, navigation must
+  // still preserve unfinished work for the lifetime of this page.
+  const unsaved = new Map();
+  function readTab(key) {
+    if (unsaved.has(key)) return unsaved.get(key);
+    try { return sessionStorage.getItem(key); } catch { return null; }
   }
+  function writeTab(key, value) {
+    try {
+      if (value === null) sessionStorage.removeItem(key);
+      else sessionStorage.setItem(key, value);
+      unsaved.delete(key);
+    } catch { unsaved.set(key, value); }
+  }
+  const getDraft = id => readTab(draftKey(id)) || '';
+  const setDraft = (id, text) => writeTab(draftKey(id), text || null);
   function forgetTab() {
     const prefix = tabPrefix();
-    for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key);
+    unsaved.clear();
+    try {
+      for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key);
+    } catch { /* Storage can be blocked. Sign-out must still finish. */ }
   }
   function clearThread() {
     ++threadRevision;
@@ -75,38 +94,71 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     const writable = !!rel(thread, 'startAgent', 'POST');
     const slash = editor.value.trimStart().startsWith('/');
     const send = byId('send-message');
-    send.disabled = commandBusy || (!slash && (!writable || agent.blocked()));
+    send.disabled = commandBusy || !editor.value.trim() || (!slash && (!writable || agent.blocked() || !!modelProblem()));
     send.setAttribute('aria-label', writable && !slash ? 'Send message' : 'Run command');
     editor.disabled = false;
     byId('tools-indicator').textContent = thread ? `tools ${tools ? 'on' : 'off'}` : '';
-    hint.textContent = writable ? 'Enter runs · Shift+Enter adds a line · / for commands' : 'Commands only · /resume to open a thread · / for commands';
+    hint.textContent = writable ? 'Enter runs · Shift+Enter adds a line · / for commands' :
+      `${thread ? 'Read-only thread' : 'Commands only'} · /resume to open a thread · / for commands`;
   }
+  function syncComposer() {
+    editor.style.height = 'auto';
+    editor.style.height = `${editor.scrollHeight}px`;
+    byId('message-count').textContent = `${editor.value.length.toLocaleString()} / ${editor.maxLength.toLocaleString()}`;
+    composerStatus();
+  }
+  window.addEventListener('resize', () => { if (state.route === '/chat') syncComposer(); });
+  function selectedProvider() { return state.runtime?.ai?.providers.find(p => p.id === choice?.provider); }
+  function modelProblem() {
+    const provider = selectedProvider();
+    if (provider && !provider.configured) {
+      if (provider.id === 'ollama') return 'Ollama is disabled.';
+      return `Set up ${provider.label} access in Provider settings.`;
+    }
+    return validChatModel(choice?.provider, choice?.model) && provider ? '' : 'Choose a model with /model.';
+  }
+  function requireModel() {
+    const problem = modelProblem();
+    if (problem) throw new Error(problem);
+    return choice;
+  }
+  byId('chat-settings').addEventListener('click', async () => {
+    try { await openProviderSettings(); } catch (error) { notify(error.message); }
+  });
   function setModelChoice(value) {
     choice = value;
     const indicator = byId('thread-model');
     indicator.hidden = !thread;
-    indicator.textContent = value ? `Model: ${value.provider}/${value.model}` : 'No model selected';
+    indicator.textContent = validChatModel(value?.provider, value?.model) ? `Model: ${value.provider}/${value.model}` : 'No model selected';
+    const access = byId('provider-access');
+    access.textContent = thread ? modelProblem() || (
+      value.provider === 'ollama' ? 'Local service · checked on send' :
+      selectedProvider()?.authType === 'login' ? 'Provider login connected' : 'Your API key is saved'
+    ) : '';
+    composerStatus();
   }
   function restoreComposer() {
     const options = state.runtime.ai.providers;
     let restored = modelChoice();
     try {
       const saved = JSON.parse(localStorage.getItem(modelKey(thread.id)));
-      if (saved && options.some(item => item.id === saved.provider) && validModel(saved.model)) restored = saved;
+      if (saved && options.some(item => item.id === saved.provider) && validChatModel(saved.provider, saved.model)) restored = saved;
     } catch { /* An invalid browser preference must not prevent opening the thread. */ }
     setModelChoice(restored);
     editor.value = getDraft(thread.id);
-    tools = localStorage.getItem(toolsKey(thread.id)) !== 'off';
+    try { tools = localStorage.getItem(toolsKey(thread.id)) !== 'off'; } catch { tools = true; }
     prompt.reset(`${tabPrefix()}history:${thread.id}`);
-    composerStatus();
+    syncComposer();
   }
   function saveModel(provider, model) {
+    if (!validChatModel(provider, model)) throw new Error('Choose a valid model identifier.');
     setModelChoice({provider, model});
-    localStorage.setItem(modelKey(thread.id), JSON.stringify(choice));
+    try { localStorage.setItem(modelKey(thread.id), JSON.stringify(choice)); }
+    catch { notify('Model changed for this view; browser storage is unavailable.'); }
   }
   editor.addEventListener('input', () => {
     if (thread) setDraft(thread.id, editor.value);
-    composerStatus();
+    syncComposer();
   });
 
   function openPicker(kind, title) {
@@ -140,7 +192,8 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     }
   });
 
-  const currentModel = () => choice ? `Current: ${choice.provider}/${choice.model}.` : 'No model selected.';
+  const currentModel = () => validChatModel(choice?.provider, choice?.model) ?
+    `Current: ${choice.provider}/${choice.model}.` : 'No model selected.';
   function renderModels(view) {
     if (!view.providers || !showing(view)) return;
     const query = pickerSearch.value.trim().toLowerCase();
@@ -148,7 +201,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     for (const provider of view.providers) {
       const providerMatches = `${provider.label} ${provider.id}`.toLowerCase().includes(query);
       const models = provider.status === 'available' ? provider.models.filter(name =>
-        providerMatches || `${provider.id}/${name}`.toLowerCase().includes(query)) : [];
+        validChatModel(provider.id, name) && (providerMatches || `${provider.id}/${name}`.toLowerCase().includes(query))) : [];
       if (!providerMatches && !models.length) continue;
       const group = document.createElement('section');
       group.setAttribute('aria-label', provider.label);
@@ -160,6 +213,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
       else if (provider.status !== 'available') note = 'Catalog unavailable.';
       else if (provider.truncated) note = 'Partial list. Use /model provider/model for an exact model ID.';
       else if (!provider.models.length) note = 'No models reported.';
+      if (provider.source === 'catalog' && provider.status === 'available') note += `${note ? ' ' : ''}Model catalog only; access depends on your provider account.`;
       if (note) {
         const info = document.createElement('p');
         info.className = 'hint';
@@ -328,7 +382,22 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
       historyBox.append(more);
     }
     if (detail.messages.length) historyBox.append(...detail.messages.map(messageNode));
-    else historyBox.textContent = 'Session ready. Ask a question, or type / for commands.';
+    else if (rel(detail, 'startAgent', 'POST')) {
+      const welcome = document.createElement('section'), title = document.createElement('h3');
+      const guide = document.createElement('p'), grid = document.createElement('div');
+      welcome.className = 'chat-welcome';
+      title.textContent = 'What are we working on?';
+      guide.textContent = 'Write a message, pick a starter, or type / for terminal commands.';
+      grid.className = 'starter-grid';
+      for (const [label, text] of starters) grid.append(button(label, () => {
+        if (thread?.id !== detail.id || editor.value) return;
+        editor.value = text;
+        editor.focus();
+        editor.dispatchEvent(new Event('input'));
+      }));
+      welcome.append(title, guide, grid);
+      historyBox.append(welcome);
+    } else historyBox.textContent = 'No messages in this read-only thread.';
     scroll();
   }
   async function reloadHistory(session) {
@@ -344,7 +413,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     byId('chat-form').classList.remove('hidden');
     byId('chat-form').classList.add('commands-only');
     prompt.reset(`${tabPrefix()}history:landing`);
-    composerStatus();
+    syncComposer();
     drawRail();
   }
   async function loadThread(id) {
@@ -359,12 +428,14 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     try { detail = await follow(queryLink(link, {include:'project,messages'})); }
     catch (error) {
       if (revision !== threadRevision) return;
-      if (sessionStorage.getItem(tabPrefix()+'last') === id) sessionStorage.removeItem(tabPrefix()+'last');
-      return commandsOnly(error.status === 404 ? 'Thread unavailable.' : error.message);
+      if (error.status === 404 && readTab(tabPrefix()+'last') === id) writeTab(tabPrefix()+'last', null);
+      commandsOnly(error.status === 404 ? 'Thread unavailable.' : error.message);
+      if (error.status !== 404) historyBox.append(button('Reload conversation', () => loadThread(id)));
+      return;
     }
     if (revision !== threadRevision || state.route !== '/chat') return;
     thread = detail;
-    sessionStorage.setItem(tabPrefix()+'last', id);
+    writeTab(tabPrefix()+'last', id);
     byId('chat-title').textContent = detail.title;
     byId('chat-project').textContent = detail.project?.name || projectName(detail.projectId);
     byId('chat-status').textContent = detail.status;
@@ -384,7 +455,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     await Promise.all([agent.hydrate(), permissionLoad]);
   }
   async function enter() {
-    const id = new URLSearchParams(location.search).get('thread') ?? sessionStorage.getItem(tabPrefix()+'last') ?? state.sessions[0]?.id;
+    const id = new URLSearchParams(location.search).get('thread') ?? readTab(tabPrefix()+'last') ?? state.sessions[0]?.id;
     if (id && !location.search) history.replaceState({}, '', threadUrl(id));
     await Promise.all([loadThread(id), loadList()]);
   }
@@ -425,11 +496,13 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     const original = thread;
     if (!original || !confirm('Delete this thread and its contents?')) return;
     await follow(rel(original, 'delete', 'DELETE'));
-    sessionStorage.removeItem(draftKey(original.id));
-    localStorage.removeItem(modelKey(original.id));
-    localStorage.removeItem(toolsKey(original.id));
-    sessionStorage.removeItem(`${tabPrefix()}history:${original.id}`);
-    if (sessionStorage.getItem(tabPrefix()+'last') === original.id) sessionStorage.removeItem(tabPrefix()+'last');
+    setDraft(original.id, '');
+    writeTab(`${tabPrefix()}history:${original.id}`, null);
+    try {
+      localStorage.removeItem(modelKey(original.id));
+      localStorage.removeItem(toolsKey(original.id));
+    } catch { /* Navigation is still required after deletion. */ }
+    if (readTab(tabPrefix()+'last') === original.id) writeTab(tabPrefix()+'last', null);
     if (thread?.id === original.id) await go('/chat', true);
   }
   async function changeGoal(original, body) {
@@ -438,6 +511,8 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     const result = await follow(link, body);
     if (thread !== original) return;
     if (result.status === 'active' && !agent.blocked()) {
+      const problem = modelProblem();
+      if (problem) return `Goal saved. ${problem}`;
       // Send the objective itself, never the command or its status output.
       void agent.start({message:result.goal, ...choice, tools}, () => {}).catch(e => notify(e.message));
       return 'Working on this goal.';
@@ -499,7 +574,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
       if (!arg) { openModels(); return; }
       const split = arg.indexOf('/');
       const id = arg.slice(0, split), name = arg.slice(split + 1);
-      if (split < 1 || !state.runtime.ai.providers.some(p => p.id === id) || !validModel(name)) throw new Error('Use /model provider/model with a supported provider and a valid model identifier.');
+      if (split < 1 || !state.runtime.ai.providers.some(p => p.id === id)) throw new Error('Use /model provider/model with a supported provider.');
       saveModel(id, name);
       return `Model: ${id}/${name}`;
     }},
@@ -525,7 +600,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
       if (arg && arg !== 'on' && arg !== 'off') throw new Error('Use /tools on or /tools off.');
       if (arg) {
         tools = arg === 'on';
-        localStorage.setItem(toolsKey(thread.id), arg);
+        try { localStorage.setItem(toolsKey(thread.id), arg); } catch { /* Keep this view's choice. */ }
       }
       return tools ? 'Tools on. File writes follow this thread’s permissions.' : 'Tools off. The next prompt requests a plain answer.';
     }},
@@ -543,10 +618,13 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
       return 'Model reply copied.';
     }},
   };
-  const prompt = createTerminalPrompt({editor, commands:slashCommands, suggestions:byId('slash-suggestions'), changed:composerStatus});
+  const prompt = createTerminalPrompt({editor, commands:slashCommands, suggestions:byId('slash-suggestions'), changed:syncComposer, readTab, writeTab});
   function consume(draft, id) {
     if (id && getDraft(id) === draft) setDraft(id, '');
-    if (thread?.id === id && editor.value === draft) editor.value = id ? getDraft(id) : '';
+    if (thread?.id === id && editor.value === draft) {
+      editor.value = id ? getDraft(id) : '';
+      syncComposer();
+    }
   }
   async function dispatch(text) {
     const revision = threadRevision;
@@ -579,7 +657,7 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
       return;
     }
     if (!rel(original, 'startAgent', 'POST') || agent.blocked()) return;
-    if (!validModel(choice?.model)) return notify('Choose a model with /model before sending.');
+    requireModel();
     prompt.remember(text);
     await agent.start({message:text, ...choice, tools}, () => consume(draft, original.id));
   }

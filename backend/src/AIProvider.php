@@ -18,30 +18,50 @@ final class AIProvider
 
     public static function modelFor(string $provider): string
     {
-        $setting = self::DEFAULTS[$provider];
+        // Never guess a model on an unfamiliar provider.
+        $setting = self::DEFAULTS[$provider] ?? null;
+        if ($setting === null) { return ''; }
         $value = trim((string) (getenv($setting['modelEnv']) ?: $setting['model']));
         // A stale configuration must not break the runtime page.
         return self::validModel($value) ? $value : $setting['model'];
     }
 
-    public static function validModel(string $model): bool
+    public static function validProvider(string $provider): bool
     {
-        return preg_match('/\A[A-Za-z0-9][A-Za-z0-9_.:\/-]{0,79}\z/D', $model) === 1;
+        return $provider !== 'omp' && preg_match('~\A[a-z0-9][a-z0-9.-]{0,79}\z~D', $provider) === 1;
     }
 
-    public static function status(array $configuredProviders): array
+    public static function validModel(string $model, string $provider = 'openai'): bool
+    {
+        return self::validProvider($provider) && strlen($model) <= 240
+            && preg_match('#\A~?[A-Za-z0-9][A-Za-z0-9_.:@+()\[\]~-]*(?:/[A-Za-z0-9_.:@+()\[\]~-]+)*\z#D', $model) === 1
+            && !preg_match('~/(?:\.|\.\.)(?:/|$)~D', $model);
+    }
+
+    public static function status(array $configuredProviders, array $registry = []): array
     {
         $providers = [];
-        foreach (self::DEFAULTS as $id => $options) {
+        $optionsById = self::DEFAULTS;
+        if (RouterConnection::enabled()) {
+            $labels = array_column($registry, 'name', 'id');
+            foreach ($configuredProviders as $id) {
+                if (self::validProvider($id)) {
+                    $optionsById[$id] ??= ['label' => $labels[$id] ?? $id];
+                }
+            }
+        }
+        foreach ($optionsById as $id => $options) {
             $configured = $id === 'ollama'
                 ? getenv('OSIRIS_OLLAMA_ENABLED') !== '0'
                 : in_array($id, $configuredProviders, true);
             $providers[] = [
                 'id' => $id, 'label' => $options['label'], 'defaultModel' => self::modelFor($id),
                 'configured' => $configured, 'connected' => false,
-                'note' => $id === 'ollama'
-                    ? 'Uses Ollama on the Docker host; model installation and connectivity are checked when sending.'
-                    : ($configured ? 'Your key is stored; connectivity is checked when sending.' : 'Set a key for this account in Settings.'),
+                'note' => match ($id) {
+                    'ollama' => 'Uses Ollama on the Docker host; model installation and connectivity are checked when sending.',
+                    'openai', 'anthropic' => $configured ? 'Your credential is stored; connectivity is checked when sending.' : 'Configure this account in Settings.',
+                    default => 'Select a model for this provider. Availability is checked when sending.',
+                },
             ];
         }
         $default = 'openai';
@@ -63,11 +83,12 @@ final class AIProvider
 
     public static function step(string $prompt, array $history, array $session, ?array $project, string $provider, string $model, #[SensitiveParameter] ?string $key, array $tools, array $steps): array
     {
-        if (!isset(self::DEFAULTS[$provider])) {
-            throw new ApiError(422, 'provider must be openai, anthropic or ollama', 'validation_error');
+        $routed = RouterConnection::enabled();
+        if (!self::validProvider($provider) || (!$routed && !isset(self::DEFAULTS[$provider]))) {
+            throw new ApiError(422, 'Unknown or unavailable chat provider', 'validation_error');
         }
-        if (!self::validModel($model)) {
-            throw new ApiError(422, 'model must be a valid model identifier (1–80 characters)', 'validation_error');
+        if (!self::validModel($model, $provider)) {
+            throw new ApiError(422, 'Invalid model identifier for the selected provider', 'validation_error');
         }
         if ($provider !== 'ollama' && ($key === null || $key === '')) {
             throw new ApiError(503, 'No key configured for this account and provider', 'ai_not_configured');
@@ -75,7 +96,10 @@ final class AIProvider
         if ($provider === 'ollama' && getenv('OSIRIS_OLLAMA_ENABLED') === '0') {
             throw new ApiError(503, 'Ollama is disabled', 'ai_not_configured');
         }
-        if ($key !== null && !preg_match('/\A[!-~]{1,4096}\z/D', $key)) {
+        $login = $key !== null && str_starts_with($key, ProviderCredentials::LOGIN_PREFIX);
+        if ($login) { $key = substr($key, strlen(ProviderCredentials::LOGIN_PREFIX)); }
+        if (($login && (!$routed || $key === '' || strlen($key) > 65536))
+            || (!$login && $key !== null && !preg_match('/\A[!-~]{1,4096}\z/D', $key))) {
             throw new ApiError(503, 'Invalid AI provider configuration', 'ai_not_configured');
         }
 
@@ -106,19 +130,48 @@ final class AIProvider
         }
         $messages[] = ['role' => 'user', 'content' => $prompt];
 
-        if (getenv('OSIRIS_AI_ROUTER') === '1') {
-            $token = trim((string) @file_get_contents(getenv('OSIRIS_AI_ROUTER_KEY_FILE') ?: '/run/osiris/router.key'));
-            if (!preg_match('~\A[A-Za-z0-9+/]{43}=\z~D', $token)) {
-                throw new ApiError(503, 'AI router authentication unavailable', 'ai_not_configured');
+        if ($routed) {
+            // The history stored with a run includes UI-only review IDs. Send only the
+            // typed model exchange, preserving empty parameter/argument objects as {}.
+            $replay = [];
+            foreach ($steps as $step) {
+                $calls = [];
+                foreach ($step['calls'] as $call) {
+                    $calls[] = [...$call, 'arguments' => (object) $call['arguments']];
+                }
+                $replay[] = ['text' => $step['text'], 'calls' => $calls, 'results' => $step['results']];
             }
-            $answer = self::request('http://ai-router:8090/chat', ['Authorization: Bearer ' . $token],
-                ['provider' => $provider, 'model' => $model, 'apiKey' => $key, 'system' => $system, 'messages' => $messages], 'router');
-            if (($answer['provider'] ?? null) !== $provider || ($answer['model'] ?? null) !== $model || !is_string($answer['text'] ?? null) || trim($answer['text']) === '' || !isRepresentableText($answer['text']) || utf8Length($answer['text']) > 10000) {
-                throw new ApiError(502, 'AI router returned no usable text answer', 'ai_upstream_failure');
+            foreach ($tools as &$tool) {
+                $schema = (array) $tool['parameters'];
+                $schema['properties'] = (object) ($schema['properties'] ?? []);
+                $tool['parameters'] = (object) $schema;
             }
-            return ['provider' => $provider, 'model' => $model, 'text' => $answer['text']];
+            unset($tool);
+            $response = self::request('http://ai-router:8090/chat', RouterConnection::headers(),
+                ['provider' => $provider, 'model' => $model, 'authType' => $login ? 'login' : 'apiKey', 'apiKey' => $key, 'system' => $system,
+                    'messages' => $messages, 'tools' => $tools, 'steps' => $replay], 'router');
+            if (($response['provider'] ?? null) !== $provider || ($response['model'] ?? null) !== $model) {
+                throw new ApiError(502, 'AI router returned an unexpected provider or model', 'ai_upstream_failure');
+            }
+            $turn = ModelToolsProtocol::turn('router', $response, $tools !== []);
+        } else {
+            $turn = self::directTurn($provider, $model, $system, $messages, $tools, $steps, $key);
         }
+        if ($key !== null && $key !== '' && self::containsCredential($turn, $key)) {
+            throw new ApiError(502, 'AI provider returned unsafe content', 'ai_upstream_failure');
+        }
+        $newIds = array_column($turn['calls'], 'id');
+        foreach ($steps as $past) {
+            if (array_intersect(array_column($past['calls'], 'id'), $newIds)) {
+                throw new ApiError(502, 'AI provider reused a tool call identifier', 'ai_upstream_failure');
+            }
+        }
+        return $turn;
+    }
 
+    private static function directTurn(string $provider, string $model, string $system, array $messages,
+        array $tools, array $steps, #[SensitiveParameter] ?string $key): array
+    {
         if ($provider === 'openai') {
             $url = 'https://api.openai.com/v1/responses';
             $headers = ['Authorization: Bearer ' . $key];
@@ -132,17 +185,7 @@ final class AIProvider
         }
         $body = ModelToolsProtocol::payload($provider, $model, $system, $messages, $tools, $steps);
         $response = self::request($url, $headers, $body, $provider);
-        $turn = ModelToolsProtocol::turn($provider, $response, $tools !== []);
-        if ($key !== null && $key !== '' && self::containsCredential($turn, $key)) {
-            throw new ApiError(502, 'AI provider returned unsafe content', 'ai_upstream_failure');
-        }
-        $newIds = array_column($turn['calls'], 'id');
-        foreach ($steps as $past) {
-            if (array_intersect(array_column($past['calls'], 'id'), $newIds)) {
-                throw new ApiError(502, 'AI provider reused a tool call identifier', 'ai_upstream_failure');
-            }
-        }
-        return $turn;
+        return ModelToolsProtocol::turn($provider, $response, $tools !== []);
     }
 
     private static function containsCredential(array $turn, #[SensitiveParameter] string $key): bool
@@ -159,9 +202,12 @@ final class AIProvider
 
     private static function request(string $url, #[SensitiveParameter] array $headers, array $payload, string $provider): array
     {
-        $json = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        $json = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
         $client = curl_init($url);
         $raw = '';
+        // The internal service bearer must stay on the private network. Direct
+        // adapters retain the operator's cURL proxy configuration.
+        if ($provider === 'router') { curl_setopt($client, CURLOPT_PROXY, ''); }
         curl_setopt_array($client, [
             CURLOPT_POST => true, CURLOPT_POSTFIELDS => $json, CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_PROTOCOLS => in_array($provider, ['ollama','router'], true) ? CURLPROTO_HTTP : CURLPROTO_HTTPS,
@@ -190,8 +236,11 @@ final class AIProvider
         if ($provider === 'router' && $code !== 200) {
             $failure = json_decode($raw, true);
             if (($failure['code'] ?? null) === 'ai_upstream_quota') { throw new ApiError(503, 'Your provider reports exhausted API credit or quota. Check API billing for the project that owns this key.', 'ai_upstream_quota'); }
-            if (($failure['code'] ?? null) === 'ai_upstream_auth') { throw new ApiError(502, 'The provider rejected your API key. Update it in API key settings.', 'ai_upstream_auth'); }
+            if (in_array($failure['code'] ?? null, ['ai_upstream_auth', 'login_invalid'], true)) { throw new ApiError(502, 'The provider rejected your credential. Update the key or sign in again.', 'ai_upstream_auth'); }
             if (($failure['code'] ?? null) === 'ai_upstream_rate_limit') { throw new ApiError(503, 'The provider is rate-limited or out of quota', 'ai_upstream_rate_limit'); }
+            if (($failure['code'] ?? null) === 'ai_tools_unsupported') { throw new ApiError(422, 'This model does not support native tools. Select a tool-capable model.', 'ai_tools_unsupported'); }
+            if (($failure['code'] ?? null) === 'ai_catalog_unavailable') { throw new ApiError(503, 'Provider model inventory unavailable', 'ai_catalog_unavailable'); }
+            if (($failure['code'] ?? null) === 'validation_error' && $code === 422) { throw new ApiError(422, 'Invalid provider, model or conversation', 'validation_error'); }
         }
         if ($provider === 'router' && $code === 504) { throw new ApiError(504, 'AI request timed out. No chat messages were saved.', 'ai_upstream_timeout'); }
         if ($code === 401 || $code === 403) { throw new ApiError(502, "The $provider credentials were rejected", 'ai_upstream_auth'); }

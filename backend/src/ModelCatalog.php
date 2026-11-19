@@ -18,15 +18,16 @@ final class ModelCatalog
     public static function list(PDO $db, Auth $auth): array
     {
         $actor = $auth->user()['id'];
-        return self::discover(static fn(string $id): ?string => SessionChat::credential($db, $actor, $id), self::fetch(...));
+        $owned = executeSql($db, 'SELECT provider FROM provider_credentials WHERE user_id=?', [$actor])->fetchAll(PDO::FETCH_COLUMN);
+        return self::discover(static fn(string $id): ?string => SessionChat::credential($db, $actor, $id, false), self::fetch(...), $owned);
     }
 
     /** @internal Batch transport returns [HTTP status, body] per successful transfer; omitted entries failed. */
-    public static function discover(callable $credential, callable $fetch): array
+    public static function discover(callable $credential, callable $fetch, array $owned = []): array
     {
         $deadline = hrtime(true) + self::BUDGET_MS * 1000000;
         $providers = $requests = $keys = [];
-        foreach (AIProvider::status([])['providers'] as ['id' => $id, 'label' => $label]) {
+        foreach (AIProvider::status($owned)['providers'] as ['id' => $id, 'label' => $label]) {
             $providers[$id] = ['id' => $id, 'label' => $label, 'models' => [], 'status' => 'unavailable'];
             try {
                 // The shared chat credential lookup also enforces the local-provider switch.
@@ -35,6 +36,12 @@ final class ModelCatalog
                 if ($error->codeName === 'ai_not_configured') { $providers[$id]['status'] = 'not_configured'; }
                 continue;
             } catch (PDOException) { continue; }
+            if ($key !== null && str_starts_with($key,ProviderCredentials::LOGIN_PREFIX)) {
+                if (!RouterConnection::enabled()) { continue; }
+                $requests[$id] = ['http://ai-router:8090/models', [...RouterConnection::headers(), 'Content-Type: application/json'],
+                    json_encode(['provider'=>$id,'authType'=>'login','apiKey'=>substr($key,strlen(ProviderCredentials::LOGIN_PREFIX))], JSON_THROW_ON_ERROR)];
+                continue;
+            }
             if ($key !== null) { $keys[] = $key; }
             $headers = match ($id) {
                 'openai' => ['Authorization: Bearer ' . $key],
@@ -55,11 +62,13 @@ final class ModelCatalog
                 if ($code !== 200 || strlen($raw) > self::MAX_BYTES) { continue; }
                 $body = json_decode($raw, false, 32);
                 if (!$body instanceof stdClass || isset($body->error)) { continue; }
-                $records = $id === 'ollama' ? ($body->models ?? null) : ($body->data ?? null);
+                $sdk = isset($requests[$id][2]);
+                $records = $sdk ? ($body->models ?? null) : ($id === 'ollama' ? ($body->models ?? null) : ($body->data ?? null));
+                if ($sdk && ($body->source ?? null) === 'catalog') { $providers[$id]['source'] = 'catalog'; }
                 if (!is_array($records)) { continue; }
 
                 $cursor = null;
-                if ($id === 'anthropic') {
+                if (!$sdk && $id === 'anthropic') {
                     if (!is_bool($body->has_more ?? null)) { continue; }
                     if ($body->has_more) {
                         $cursor = $body->last_id ?? null;
@@ -75,10 +84,10 @@ final class ModelCatalog
                 foreach ($records as $record) {
                     if ($counts[$id] === self::MAX_RECORDS) { $truncated = true; break; }
                     $counts[$id]++;
-                    $model = $id === 'ollama' ? ($record->name ?? $record->model ?? null) : ($record->id ?? null);
+                    $model = !$sdk && $id === 'ollama' ? ($record->name ?? $record->model ?? null) : ($record->id ?? null);
                     // An invalid envelope is a failure, not a successful empty inventory.
                     if (!is_string($model) || $model === '' || self::containsKey($model, $keys)) { continue 2; }
-                    if (AIProvider::validModel($model) && self::chatModel($id, $model, $record)) {
+                    if (AIProvider::validModel($model, $id) && ($sdk || self::chatModel($id, $model, $record))) {
                         $models[$id][$model] = $model;
                     }
                 }
@@ -130,10 +139,11 @@ final class ModelCatalog
                 $client = curl_init($url);
                 if ($client === false) { continue; }
                 $bodies[$id] = '';
+                $sdk = isset($requests[$id][2]);
                 if (!curl_setopt_array($client, [
                     CURLOPT_HTTPHEADER => ['Accept: application/json', ...$headers],
                     CURLOPT_FOLLOWLOCATION => false,
-                    CURLOPT_PROTOCOLS => $id === 'ollama' ? CURLPROTO_HTTP : CURLPROTO_HTTPS,
+                    CURLOPT_PROTOCOLS => $sdk || $id === 'ollama' ? CURLPROTO_HTTP : CURLPROTO_HTTPS,
                     CURLOPT_CONNECTTIMEOUT_MS => min(1200, $timeoutMs), CURLOPT_TIMEOUT_MS => $timeoutMs,
                     CURLOPT_PRIVATE => $id,
                     CURLOPT_WRITEFUNCTION => static function ($unused, string $chunk) use (&$bodies, $id): int {
@@ -142,7 +152,7 @@ final class ModelCatalog
                         $bodies[$id] .= $chunk;
                         return $size;
                     },
-                ]) || curl_multi_add_handle($multi, $client) !== CURLM_OK) { continue; }
+                ] + ($sdk ? [CURLOPT_PROXY => '', CURLOPT_POSTFIELDS => $requests[$id][2]] : [])) || curl_multi_add_handle($multi, $client) !== CURLM_OK) { continue; }
                 $handles[] = $client;
             }
             do {

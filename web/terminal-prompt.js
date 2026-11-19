@@ -33,7 +33,7 @@ export function toolLine(event) {
   return terminalLine('terminal-tool', `tool · ${event.name}${event.path ? ' · ' + event.path : ''}`, event.output);
 }
 
-export function createTerminalPrompt({editor, commands, suggestions, changed}) {
+export function createTerminalPrompt({editor, commands, suggestions, changed, readTab, writeTab}) {
   let key, history = [], cursor = 0, scratch = '', selected = -1;
   function dismiss() {
     selected = -1;
@@ -92,7 +92,7 @@ export function createTerminalPrompt({editor, commands, suggestions, changed}) {
     history = [];
     if (key) {
       try {
-        const saved = JSON.parse(sessionStorage.getItem(key));
+        const saved = JSON.parse(readTab(key));
         if (Array.isArray(saved)) history = saved.filter(s => typeof s === 'string').slice(-40);
       } catch { /* A malformed tab preference is not command history. */ }
     }
@@ -106,7 +106,7 @@ export function createTerminalPrompt({editor, commands, suggestions, changed}) {
     cursor = history.length;
     scratch = '';
     dismiss();
-    if (key) sessionStorage.setItem(key, JSON.stringify(history));
+    if (key) writeTab(key, JSON.stringify(history));
   }
   editor.addEventListener('input', event => {
     cursor = history.length;

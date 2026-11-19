@@ -236,9 +236,9 @@ def exercise_terminal(page, original, resources):
         assert response.status == 201
         assert response.request.post_data_json == {"message": "A plain answer please", "provider": "ollama", "model": "qa-terminal", "tools": False}
         saved = response.json()
-        expect(page.locator("#agent-state")).to_contain_text("Refresh the run")
+        expect(page).to_have_url(base + "/errors/503/connection_interrupted")
         assert blocked == [base + saved["_links"]["step"]["href"]]
-        page.reload()
+        page.get_by_role("link", name="Back to chat", exact=True).click()
         expect(page.locator("#agent-state")).to_contain_text("Ready for the next model step")
         expect(page.locator("#agent-output")).to_contain_text("A plain answer please")
         expect(page.get_by_role("button", name="Continue", exact=True)).to_be_enabled()
@@ -337,7 +337,7 @@ def exercise_private_chat(page):
         expect(page.locator("#chat-title")).to_have_text("New chat")
         expect(page.locator("#chat-project")).to_have_text("Private chat")
         expect(page.get_by_label("Message", exact=True)).to_be_editable()
-        expect(page.get_by_role("button", name="Send message", exact=True)).to_be_enabled()
+        expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
         expect(page.get_by_role("button", name="New chat", exact=True)).to_be_enabled()
 
         page.get_by_role("button", name="API Checks", exact=True).click()
@@ -412,6 +412,15 @@ def exercise_registration(browser, private_project):
         page.get_by_role("button", name="Log out", exact=True).click()
         expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
         assert context.request.get(base + "/auth/me").status == 401
+        page.get_by_role("link", name="Create account", exact=True).click()
+        page.get_by_label("Username", exact=True).fill(username)
+        page.get_by_label("Password", exact=True).fill(secret)
+        page.get_by_role("button", name="Create account", exact=True).click()
+        expect(page).to_have_url(base + "/errors/409/conflict")
+        expect(page.get_by_role("heading", name="Record conflict")).to_be_visible()
+        page.get_by_role("link", name="Back to registration", exact=True).click()
+        expect(page).to_have_url(base + "/register")
+        expect(page.get_by_label("Password", exact=True)).to_have_value("")
         login(page, username, secret)
         assert context.request.get(base + "/auth/me").json()["user"] == created["user"]
         assert context.request.get(project_url).status == 404
@@ -519,6 +528,14 @@ def exercise(browser):
         expect(query.get_by_role("button", name="Next page")).to_be_disabled()
 
         expect(run_check("response-formats", "Check response formats")).to_contain_text("HTTP 406")
+        error_link = page.locator('#response-formats a[href="/errors/406/not_acceptable"]')
+        with context.expect_page() as opened:
+            error_link.click()
+        details = opened.value
+        expect(details.get_by_role("heading", name="Response format not available")).to_be_visible()
+        expect(details).to_have_url(base + "/errors/406/not_acceptable")
+        details.close()
+        expect(page.locator("#response-formats").get_by_role("status")).to_have_text("Passed")
         expect(run_check("http-statuses", "Run HTTP checks")).to_contain_text("HTTP 400")
         page.get_by_label("Context session").select_option(label=session)
         expect(run_check("project-context", "Read project context")).to_contain_text("provenance:")
@@ -527,11 +544,24 @@ def exercise(browser):
         cleanup(context, [created])
         resources.pop()
         expect(run_check("project-context", "Read project context", "Failed")).to_contain_text("HTTP 404")
+        expect(page.locator('#project-context a[href="/errors/404/not_found"]')).to_be_visible()
     finally:
         cleanup(context, resources)
-    page.get_by_role("button", name="Log out", exact=True).click()
+    # An expired session leads to its own recovery page instead of an opaque
+    # redirect or an automatic re-submission. Sign out in another real tab.
+    other = context.new_page()
+    other.goto(base + "/dashboard")
+    expect(other.locator("#api-state")).to_have_text("API connected")
+    with other.expect_response(lambda r: r.url == base + "/auth/logout" and r.request.method == "POST") as logout:
+        other.get_by_role("button", name="Log out", exact=True).click()
+    assert logout.value.status == 204
+    other.close()
+    page.get_by_role("button", name="Dashboard", exact=True).click()
+    expect(page).to_have_url(base + "/errors/401/unauthorized")
+    page.get_by_role("link", name="Sign in", exact=True).click()
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
     assert context.request.get(base + "/auth/me").status == 401
+    expect(page).to_have_url(base + "/login")
     result = page.goto(base + "/missing-ui-page")
     assert result.status == 404
     expect(page.get_by_role("heading", name="Page not found")).to_be_visible()

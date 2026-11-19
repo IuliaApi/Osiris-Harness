@@ -97,6 +97,8 @@ export function createAgentConsole({follow, rel, changed, reloadHistory, scroll}
     const run = view?.run, action = view?.action;
     const busy = action || (view && starting.has(view.session.id) && 'start');
     showClock(busy === 'step');
+    byId('thinking-dots').hidden = !['load', 'start', 'step', 'requests', 'history'].includes(busy);
+    controls.classList.toggle('has-error', !!view?.error || run?.status === 'failed');
     controls.hidden = !view || !(run || busy || view.error);
     output.replaceChildren();
     if (run && run.status !== 'completed') {
@@ -126,11 +128,11 @@ export function createAgentConsole({follow, rel, changed, reloadHistory, scroll}
       cancelled: 'Cancelled. Applied changes are kept. A provider call already in flight may still finish.',
       failed: `Failed: ${run.error || 'The run did not complete.'}`,
     }[run.status];
-    status.textContent = view.error ? `${view.error} Refresh the run to check its saved state.` : text;
+    status.textContent = view.error ? `${view.error} Refresh the run to check its saved state; this will not repeat a model call or file change.` : text;
     more.hidden = !['ready', 'review'].includes(run?.status) || !rel(run, 'step', 'POST');
     more.disabled = !!(busy || view.error) || (run?.status === 'review' && !allApplied(view));
     cancel.hidden = !active(run) || !rel(run, 'cancel', 'POST');
-    cancel.disabled = !!busy && busy !== 'step';
+    cancel.disabled = !!view.error || (!!busy && busy !== 'step');
     if (!cancel.hidden && !cancel.disabled) status.textContent += ' Esc cancels remaining steps, not a call already sent.';
     refresh.hidden = !active(run) && !view.error;
     refresh.disabled = !!busy;

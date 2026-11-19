@@ -6,21 +6,27 @@ claim the read/write/collection/composite database-backed endpoints work end-to-
 """
 import json
 from pathlib import Path
+import argparse
 import socket
+import tempfile
 import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser()
+parser.add_argument('--browser', action='store_true', help='also exercise Chromium recovery links and the synthetic chat fixture')
+args = parser.parse_args()
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
 
+server_log = tempfile.TemporaryFile(mode='w+', encoding='utf-8')
 process = subprocess.Popen(
     ['php', '-d', 'expose_php=0', '-S', f'127.0.0.1:{port}',
      '-t', 'backend/public', 'backend/public/index.php'],
-    cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    cwd=ROOT, stdout=subprocess.DEVNULL, stderr=server_log,
 )
 ids = []
 
@@ -72,9 +78,34 @@ try:
     assert status == 404 and json.loads(body)['code'] == 'not_found'
     print('PASS unknown browser pages show a 404 page; API clients receive JSON')
 
+    for route, expected, code, heading in [
+        ('/auth/me', 401, 'unauthorized', 'Sign in required'),
+        ('/auth/login', 405, 'invalid_request', 'Action not available'),
+        ('/api/no-such-route/private-marker', 401, 'unauthorized', 'Sign in required'),
+        ('/bad/private-marker', 404, 'not_found', 'Page not found'),
+    ]:
+        status, headers, body = http(route, accept='text/html,application/xml;q=0.9,*/*;q=0.8')
+        canonical = f'/errors/{expected}/{code}'
+        assert status == expected and headers['X-Error-Page'] == canonical and 'text/html' in headers['Content-Type']
+        assert heading in body and f'rel="canonical" href="{canonical}"' in body and 'private-marker' not in body
+        status, headers, page = http(canonical, accept='text/html')
+        assert status == expected and heading in page and 'href="/dashboard"' in page
+        if expected == 401:
+            assert 'href="/login"' in page
+    status, headers, body = http('/errors/422/login_input_invalid', accept='text/html')
+    assert status == 422 and 'Check the sign-in response' in body and 'href="/manage"' in body
+    status, headers, body = http('/errors/401/private_marker', accept='text/html')
+    assert status == 404 and 'private_marker' not in body and headers['X-Error-Page'] == '/errors/404/not_found'
+    for accept in ('application/xml', 'application/yaml'):
+        status, headers, body = http('/auth/me', accept=accept)
+        assert status == 401 and accept in headers['Content-Type'] and 'unauthorized' in body and '<html' not in body
+        assert headers['X-Error-Page'] == '/errors/401/unauthorized'
+    print('PASS browser errors and distinct recovery pages; XML/YAML errors keep status and media type')
+
     status, headers, body = http('/sessions', accept='image/png')
     item = json.loads(body)
     assert status == 406 and item['code'] == 'not_acceptable' and item['requestId'] == ids[-1]
+    assert headers['X-Error-Page'] == '/errors/406/not_acceptable'
     print('PASS unsupported Accept gives 406 without leaking warnings or DB errors')
 
     for path, method in [('/not-a-route', 'GET'), ('/sessions', 'DELETE')]:
@@ -88,13 +119,18 @@ try:
     status, headers, body = http('/auth/login?unexpected=1', method='POST')
     assert status == 400 and json.loads(body)['requestId'] == ids[-1]
     print('PASS public authentication method/query errors are correlated without PostgreSQL')
+    if args.browser:
+        subprocess.run(['node', 'scripts/test-chat-ui.cjs', f'http://127.0.0.1:{port}'], cwd=ROOT, check=True)
 finally:
     process.terminate()
     try:
-        _stdout, stderr = process.communicate(timeout=5)
+        process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
-        _stdout, stderr = process.communicate(timeout=5)
+        process.wait(timeout=5)
+    server_log.seek(0)
+    stderr = server_log.read()
+    server_log.close()
 
 for rid in ids:
     assert rid in stderr and f'"requestId":"{rid}"' in stderr, (rid, stderr)

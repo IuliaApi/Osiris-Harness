@@ -6,17 +6,19 @@ final class SessionChat
 {
     public static function runtime(PDO $db, array $actor): array
     {
-        $owned = executeSql($db, 'SELECT provider FROM provider_credentials WHERE user_id = ?', [$actor['id']])->fetchAll(PDO::FETCH_COLUMN);
-        $runtime = AIProvider::status($owned);
+        $owned = executeSql($db, 'SELECT provider,auth_type FROM provider_credentials WHERE user_id = ?', [$actor['id']])->fetchAll(PDO::FETCH_KEY_PAIR);
+        $runtime = AIProvider::status(array_keys($owned));
         foreach ($runtime['providers'] as &$p) {
-            if ($actor['role'] !== 'viewer' && in_array($p['id'], ProviderCredentials::PROVIDERS, true)) {
+            if (isset($owned[$p['id']])) { $p['authType'] = $owned[$p['id']]; }
+            if ($actor['role'] !== 'viewer') {
                 $url = '/api/credentials/' . $p['id'];
-                $p['_links']['setCredential'] = apiLink($url, 'PUT');
-                if ($p['configured']) { $p['_links']['deleteCredential'] = apiLink($url, 'DELETE'); }
+                if (in_array($p['id'],ProviderCredentials::KEY_PROVIDERS,true)) { $p['_links']['setCredential'] = apiLink($url,'PUT'); }
+                if (isset($owned[$p['id']])) { $p['_links']['deleteCredential'] = apiLink($url,'DELETE'); }
             }
         }
         unset($p);
         $runtime['_links'] = ['budget' => apiLink('/api/budget')];
+        if ($actor['role'] !== 'viewer' && RouterConnection::enabled()) { $runtime['_links']['loginMethods'] = apiLink('/api/provider-logins'); }
         return $runtime;
     }
 
@@ -66,21 +68,24 @@ final class SessionChat
             throw new ApiError(422, 'Chat requires a message of 1–6000 characters and accepts only provider and model options', 'validation_error');
         }
         $provider = array_key_exists('provider', $body) ? $body['provider'] : 'openai';
-        if (!in_array($provider, [...ProviderCredentials::PROVIDERS,'ollama'], true)) { throw new ApiError(422, 'Unknown chat provider', 'validation_error'); }
+        if (!ProviderCredentials::validProvider($provider) || (!RouterConnection::enabled() && !in_array($provider, ['openai','anthropic','ollama'], true))) { throw new ApiError(422, 'Unknown chat provider', 'validation_error'); }
         $model = array_key_exists('model', $body) ? $body['model'] : AIProvider::modelFor($provider);
-        if (!is_string($model) || !AIProvider::validModel($model)) { throw new ApiError(422, 'Invalid model identifier', 'validation_error'); }
+        if (!is_string($model) || !AIProvider::validModel($model, $provider)) { throw new ApiError(422, 'Choose a valid model with /model before sending', 'validation_error'); }
         return [trim($body['message']), $provider, $model];
     }
 
-    public static function credential(PDO $db, string $user, string $provider): ?string
+    public static function credential(PDO $db, string $user, string $provider, bool $refresh = true): ?string
     {
-        if ($provider === 'ollama') {
-            if (getenv('OSIRIS_OLLAMA_ENABLED') === '0') { throw new ApiError(503, 'Ollama is disabled', 'ai_not_configured'); }
-            return null;
-        }
+        if ($provider === 'ollama' && getenv('OSIRIS_OLLAMA_ENABLED') === '0') { throw new ApiError(503, 'Ollama is disabled', 'ai_not_configured'); }
         $sealed = executeSql($db, 'SELECT sealed_key FROM provider_credentials WHERE user_id=? AND provider=?', [$user,$provider])->fetchColumn();
-        if ($sealed === false) { throw new ApiError(503, 'No key configured for this account and provider', 'ai_not_configured'); }
-        return ProviderCredentials::unseal($user,$provider,$sealed);
+        if ($sealed === false) {
+            if ($provider === 'ollama') { return null; }
+            throw new ApiError(503, 'No credential configured for this account and provider', 'ai_not_configured');
+        }
+        $value = ProviderCredentials::unseal($user,$provider,$sealed);
+        if (!str_starts_with($value,ProviderCredentials::LOGIN_PREFIX)) { return $value; }
+        if (!RouterConnection::enabled()) { throw new ApiError(503, 'Provider sign-in requires the SDK router', 'ai_not_configured'); }
+        return $refresh ? ProviderLogin::refreshIfNeeded($user,$provider,$value) : $value;
     }
 
     public static function chat(PDO $db, Auth $auth, WorkspaceRepository $store, string $sessionId, array $body): array

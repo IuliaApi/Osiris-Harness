@@ -23,10 +23,17 @@ register_shutdown_function(static function () use ($requestId, $started, $method
         'route' => $logRoute, 'status' => http_response_code(), 'durationMs' => round((microtime(true) - $started) * 1000)]));
 });
 try {
+    if (preg_match('~\\A/errors/([45][0-9]{2})/([a-z][a-z0-9_]{0,63})\\z~', $path, $errorPage)) {
+        if (ErrorPage::url((int) $errorPage[1], $errorPage[2]) !== $path) throw new ApiError(404, 'Route not found', 'not_found');
+        requireHttpMethod($method, ['GET', 'HEAD']);
+        respond(['error' => 'Workspace request failed', 'code' => $errorPage[2], 'requestId' => $requestId], (int) $errorPage[1]);
+    }
     $asset = match ($path) {
         '/', '/login', '/register', '/dashboard', '/workspace', '/chat', '/manage', '/api-checks' => ['index.html', 'text/html'],
         '/assets/workspace.css' => ['workspace.css', 'text/css'],
         '/assets/workspace.js' => ['workspace.js', 'text/javascript'],
+        '/assets/model-choice.js' => ['model-choice.js', 'text/javascript'],
+        '/assets/provider-login.js' => ['provider-login.js', 'text/javascript'],
         '/assets/api-checks.js' => ['api-checks.js', 'text/javascript'],
         '/assets/chat-workbench.js' => ['chat-workbench.js', 'text/javascript'],
         '/assets/thread-messages.js' => ['thread-messages.js', 'text/javascript'],
@@ -48,16 +55,12 @@ try {
         exit;
     }
     if (preg_match('~^/(?:auth|api|projects|sessions)(?:/|$)~D', $path) !== 1) {
-        if ($method === 'GET' && preferredMediaType($_SERVER['HTTP_ACCEPT'] ?? '', [...REPRESENTATION_TYPES, 'text/html']) === 'text/html') {
-            http_response_code(404);
-            header('Vary: Accept');
-            header('Content-Type: text/html; charset=utf-8');
-            readfile(dirname(__DIR__, 2) . '/web/404.html');
-            exit;
-        }
         throw new ApiError(404, 'Route not found', 'not_found');
     }
-    responseMediaType();
+    // Browser reads can encounter a real API error, such as an expired session.
+    // Successful responses still negotiate data formats. Mutations negotiate
+    // before executing, so unsupported clients cannot cause writes.
+    if (!in_array($method, ['GET', 'HEAD'], true) || !ErrorPage::preferred()) responseMediaType();
     if (str_starts_with($path,'/auth/') || $path === '/auth') {
         $authMethod = match ($path) {
             '/auth/register','/auth/login','/auth/logout' => 'POST', '/auth/me' => 'GET',
@@ -112,6 +115,7 @@ try {
         if (queryParams() !== []) { throw new ApiError(400, 'Budget accepts no query parameters'); }
         respond(SessionChat::budget($db, $auth->user()['id']));
     }
+    ProviderLogin::handleRequest($db, $auth, $method, $path);
     ProviderCredentials::handleRequest($db, $auth, $method, $path);
     WorkspaceToolRuns::handleRequest($db, $auth, $method, $path);
     ChatPermissions::handleRequest($db, $auth, $method, $path);

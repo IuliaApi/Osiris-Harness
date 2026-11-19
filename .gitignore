@@ -3,3 +3,4 @@
 /vendor/
 /backend/vendor/
 __pycache__/
+node_modules/

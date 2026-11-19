@@ -1,5 +1,7 @@
 import { createApiChecks } from './api-checks.js';
 import { createChatWorkbench } from './chat-workbench.js';
+import { validChatModel } from './model-choice.js';
+import { showProviderLogin } from './provider-login.js';
 import { initCommandMenu } from './command-menu.js';
 const $=id=>document.getElementById(id);
 const appState={name:'',csrf:'',root:null,runtime:null,route:'',projects:[],sessions:[],links:{}};
@@ -30,30 +32,53 @@ async function fetchResponse(method, path, body, accept = 'application/json', he
     options.body = JSON.stringify(body);
   }
   const response = await fetch(localPath(path), options);
-  if (response.status === 401 && appState.name) {
-    $('app').classList.add('hidden');
-    location.replace('/login');
-    throw new Error('Sign in again.');
-  }
   const contentType = response.headers.get('Content-Type') || '';
   let data = await response.text();
   if (contentType.split(';')[0] === 'application/json' && data) {
     // Keep malformed responses available for the diagnostics transcript.
     try { data = JSON.parse(data); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
   }
+  const reported = response.headers.get('X-Error-Page') || '';
+  const errorPage = response.ok ? null : (
+    /^\/errors\/[45][0-9]{2}\/[a-z][a-z0-9_]{0,63}$/.test(reported) && reported.startsWith(`/errors/${response.status}/`)
+      ? reported : `/errors/${response.status}/request_failed`
+  );
   return {
     ok: response.ok, status: response.status, url: path, data, contentType,
-    requestId: response.headers.get('X-Request-Id'),
+    requestId: response.headers.get('X-Request-Id'), errorPage,
   };
 }
+let navigatingToError = false;
+function navigateToError(url) {
+  if (navigatingToError) return;
+  navigatingToError = true;
+  // Back reopens the workspace page; the failed write was a fetch, not a form navigation.
+  location.assign(url);
+}
 async function request(method, path, payload, headers) {
-  const result = await fetchResponse(method, path, payload, 'application/json', headers);
+  let result;
+  try { result = await fetchResponse(method, path, payload, 'application/json', headers); }
+  catch (error) {
+    if (error instanceof TypeError) navigateToError('/errors/503/connection_interrupted');
+    throw error;
+  }
   if (!result.ok) {
+    const anonymousDiscovery = result.status === 401 && method === 'GET' && path === '/auth/me' && !appState.name;
+    if (!anonymousDiscovery) navigateToError(result.errorPage);
     const error = new Error(`${result.data?.error || 'Request failed'} (HTTP ${result.status}; request ${result.requestId || 'unknown'})`);
     error.status = result.status;
     throw error;
   }
   return result.data;
+}
+function addErrorLink(container, {errorPage, status}) {
+  if (!errorPage || [...container.querySelectorAll('a')].some(a => a.getAttribute('href') === errorPage)) return;
+  const label = errorPage.split('/').at(-1).replaceAll('_', ' ');
+  const link = el('a', '', `HTTP ${status} · ${label} — error details (new tab)`);
+  link.href = errorPage;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  container.append(link);
 }
 function projectName(id){return id===null?'Private chat':appState.projects.find(p=>p.id===id)?.name||id;}
 function getPath(){return views[location.pathname]?location.pathname:'/dashboard';}
@@ -179,25 +204,34 @@ function formAction(root,label,fields,submit,initial={},inline=false){
 function modelChoice(){
   const ai=appState.runtime?.ai;if(!ai)return null;
   let pref;try{pref=JSON.parse(localStorage.getItem('osiris:model:'+appState.userId));}catch{}
-  if(pref&&ai.providers.some(p=>p.id===pref.provider)&&typeof pref.model==='string'&&pref.model)return {provider:pref.provider,model:pref.model};
-  const provider=ai.providers.find(p=>p.configured&&p.id!=='ollama')||ai.providers.find(p=>p.id==='openai')||ai.providers[0];
+  if(pref&&ai.providers.some(p=>p.id===pref.provider)&&validChatModel(pref.provider,pref.model))return {provider:pref.provider,model:pref.model};
+  const provider=ai.providers.find(p=>p.id===ai.defaultProvider)||ai.providers[0];
   return provider?{provider:provider.id,model:provider.defaultModel}:null;
+}
+function openProviderSettings(){
+  manager={link:rel(appState.root,'runtime','GET'),kind:'settings',label:'Model settings & credentials'};
+  return go('/manage');
 }
 function renderSettings(body,runtime){
   appState.runtime=runtime;const providers=runtime.ai.providers,choice=modelChoice();
+  const methods=rel(runtime.ai,'loginMethods','GET');
+  if(methods){
+    const node=section(body,'Connect a provider','Link your own provider account or subscription. Some providers validate keys against their service; review the prompts before continuing.');
+    void showProviderLogin(node,methods,{el,follow,rel,refresh:renderManage,notify});
+  }
   if(choice){
-    const node=section(body,'Chat model',`Current choice: ${choice.provider} / ${choice.model}. Only this preference is saved in this browser.`);
+    const node=section(body,'Chat model',`Default for new threads: ${choice.model?choice.provider+' / '+choice.model:'No model selected'}. This preference is saved in this browser.`);
     const inputs=formAction(node,'Save model',[['provider','Provider',providers.map(p=>p.id)],['model','Model']],prefs=>{
-      if(!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}$/.test(prefs.model))throw Error('Use a model identifier of 1–80 characters.');
+      if(!validChatModel(prefs.provider,prefs.model))throw Error('Choose a valid model for this provider. Use /model in chat to see the list.');
       localStorage.setItem('osiris:model:'+appState.userId,JSON.stringify(prefs));return renderManage();
     },choice);
     inputs.provider.onchange=()=>{inputs.model.value=providers.find(p=>p.id===inputs.provider.value).defaultModel;};
   }
   for(const p of providers){
-    const node=section(body,p.label,`${p.configured?'Configured':'Not configured'}. Connectivity is checked when sending a message.`);
+    const node=section(body,p.label,`${p.authType==='login'?'Signed in':p.configured?'Configured':'Not configured'}. Connectivity is checked when sending a message.`);
     const set=rel(p,'setCredential','PUT'),del=rel(p,'deleteCredential','DELETE');
     if(set)formAction(node,'Set key',[['apiKey','Provider API key','password']],async payload=>{await follow(set,payload);await renderManage();});
-    if(del)node.append(button('Remove key',async()=>{if(confirm(`Remove your ${p.label} credential?`)){await follow(del);await renderManage();}}));
+    if(del)node.append(button(p.authType==='login'?'Disconnect provider':'Remove key',async()=>{if(confirm(`Remove your ${p.label} credential from Osiris? This does not cancel a subscription.`)){await follow(del);await renderManage();}}));
   }
 }
 const projectFields=[['name','Name'],['language','Language','text',true],['repositoryUrl','Public GitHub URL','url',true]];
@@ -317,17 +351,7 @@ async function submitAuth(event, landing) {
     updatePasswordChecks();
     await go(registering ? '/dashboard' : landing, true);
   } catch (err) {
-    if (err.status === 409 && registering) {
-      error.textContent = 'Username already taken.';
-      name.focus();
-    } else if (err.status === 401 && !registering) {
-      error.textContent = 'Incorrect username or password.';
-      password.value = '';
-      updatePasswordChecks();
-      password.focus();
-    } else {
-      error.textContent = err.message;
-    }
+    if (!navigatingToError) error.textContent = err.message;
   } finally {
     submit.disabled = false;
   }
@@ -359,10 +383,11 @@ async function init(){
   window.addEventListener('popstate',renderRoute);
   window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
   try{signedIn(await request('GET','/auth/me'));}catch(e){
+    if (navigatingToError) return;
     if(e.status!==401)$('auth-error').textContent=e.message;
   }
   await renderRoute();
 }
-const apiChecks = createApiChecks({ appState, rel, queryLink, fetchResponse, refreshData });
-const workbench = createChatWorkbench({state:appState, follow, rel, queryLink, go, projectName, modelChoice, notify, button});
+const apiChecks = createApiChecks({ appState, rel, queryLink, fetchResponse, refreshData, addErrorLink });
+const workbench = createChatWorkbench({state:appState, follow, rel, queryLink, go, projectName, modelChoice, notify, button, openProviderSettings});
 init().catch(e=>notify(e.message));

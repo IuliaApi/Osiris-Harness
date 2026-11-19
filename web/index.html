@@ -82,11 +82,11 @@
               <div class="thread-actions"><span class="badge-os" id="chat-status"></span><button class="subtle-link hidden" id="rename-thread" type="button">Rename thread</button><button class="subtle-link hidden" id="archive-session" type="button">Archive</button><button class="subtle-link hidden" id="delete-session" type="button">Delete session</button></div>
             </header>
             <div class="chat-history" id="terminal-scroll" role="region" aria-label="Terminal transcript" tabindex="0">
-              <div id="chat-history">Choose a thread to see its messages.</div>
+              <div id="chat-history" role="log" aria-label="Conversation" aria-relevant="additions">Choose a thread to see its messages.</div>
               <div id="agent-output"></div>
             </div>
             <div id="agent-controls" class="agent-controls" hidden>
-              <div><span id="agent-state" role="status"></span> <span id="agent-clock" aria-hidden="true" hidden></span></div>
+              <div><span id="thinking-dots" aria-hidden="true" hidden><i></i><i></i><i></i></span> <span id="agent-state" role="status"></span> <span id="agent-clock" aria-hidden="true" hidden></span></div>
               <div class="thread-actions">
                 <button id="agent-refresh" type="button" class="btn-os" hidden>Refresh run</button>
                 <button id="agent-continue" type="button" class="btn-os" hidden>Continue</button>
@@ -114,13 +114,16 @@
               <ul id="slash-suggestions" role="listbox" aria-label="Slash commands" hidden></ul>
               <div class="prompt-line">
                 <span class="prompt-sign" aria-hidden="true">❯</span>
-                <textarea id="message-text" aria-label="Message" aria-describedby="chat-hint" aria-controls="slash-suggestions" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ask Osiris, or type / for commands" rows="1" maxlength="6000" required disabled></textarea>
+                <textarea id="message-text" aria-label="Message" aria-describedby="chat-hint message-count" aria-controls="slash-suggestions" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ask Osiris, or type / for commands" rows="1" maxlength="6000" required disabled></textarea>
                 <button class="btn-os primary" type="submit" id="send-message" aria-label="Send message" disabled>Run</button>
               </div>
               <div class="composer-footer">
                 <span id="thread-model" hidden></span>
+                <span id="provider-access" class="hint"></span>
+                <button id="chat-settings" class="subtle-link" type="button">Provider settings</button>
                 <button id="thread-permissions" class="subtle-link" type="button" aria-haspopup="dialog" aria-controls="thread-picker" hidden>Permissions</button>
                 <span class="tools-indicator" id="tools-indicator"></span>
+                <span id="message-count" class="hint">0 / 6,000</span>
               </div>
               <p class="hint" role="status" id="chat-hint">Open a thread to use the terminal.</p>
             </form>

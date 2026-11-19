@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/ErrorPage.php';
+
 final class ApiError extends RuntimeException
 {
     public function __construct(public readonly int $httpStatus, string $message, public readonly string $codeName = 'invalid_request')
@@ -13,9 +15,20 @@ final class ApiError extends RuntimeException
 function respond(mixed $value, int $status = 200): never
 {
     try {
+        if ($status >= 400) {
+            $code = $value['code'] ?? 'request_failed';
+            if (ErrorPage::preferred()) {
+                ErrorPage::advertise($status, $code);
+                ErrorPage::render($status, $code);
+            }
+            responseMediaType(); // A rejected Accept gets a 406 help link instead.
+            ErrorPage::advertise($status, $code);
+        }
         sendRepresentation($value, $status);
     } catch (ApiError $error) {
         if ($error->httpStatus !== 406) { throw $error; }
+        ErrorPage::advertise(406, $error->codeName);
+        if (ErrorPage::preferred()) ErrorPage::render(406, $error->codeName);
         http_response_code(406);
         header('Vary: Accept');
         header('Content-Type: application/json; charset=utf-8');

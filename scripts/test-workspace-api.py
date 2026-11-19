@@ -1086,6 +1086,41 @@ def synthetic_chat(b, member, personal):
     passed('synthetic Ollama HTTP: project and standalone chat turns persisted, atomic turn-pair rollback and retry; no live inference claimed')
 
 
+def sdk_login_isolation(owner, other, viewer):
+    from time import monotonic, sleep
+
+    def routed(source):
+        client = Client('api:8096')
+        client.cookie, client.csrf = source.cookie, source.csrf
+        return client
+
+    owner, other, viewer = map(routed, (owner, other, viewer))
+    catalog = owner.req('GET', '/api/provider-logins').data
+    methods = {m['id']: m for m in catalog['providers']}
+    assert 'openai-codex' in methods and methods['ollama']['available']
+    start = {'provider': 'ollama'}
+    viewer.req('POST', '/api/provider-logins', 403, start)
+    owner.req('POST', '/api/provider-logins', 403, start, headers={'X-CSRF-Token': None})
+    state = owner.follow(catalog, 'startLogin', 'POST', data=start).data
+    other.follow(state, 'status', 'POST', status=404, data={})
+    deadline = monotonic() + 20
+    while state['state'] == 'pending':
+        assert monotonic() < deadline, 'Local SDK login did not complete'
+        if 'prompt' in state:
+            assert state['prompt']['allowEmpty'], 'Expected the optional local-provider key prompt'
+            state = owner.follow(state, 'answer', 'POST', data={'promptId':state['prompt']['id'], 'answer':''}).data
+        else:
+            sleep(.1)
+            state = owner.follow(state, 'status', 'POST', data={}).data
+    assert state['state'] == 'completed' and state['provider'] == 'ollama' and 'credential' not in state
+    def local(client):
+        return next(p for p in client.req('GET','/api/runtime').data['ai']['providers'] if p['id'] == 'ollama')
+    assert local(owner)['authType'] == 'login' and 'authType' not in local(other)
+    owner.follow(local(owner),'deleteCredential','DELETE',status=204)
+    assert 'authType' not in local(owner)
+    passed('SDK sign-in requires CSRF and a writable account; transactions and saved grants are account-isolated')
+
+
 if __name__ == '__main__':
     if not __debug__:
         raise SystemExit('Python assertions must be enabled for the integration tests.')
@@ -1107,6 +1142,7 @@ if __name__ == '__main__':
             tools(a,b,viewer)
             composition(a)
             chat(a,b,viewer)
+            sdk_login_isolation(a,b,viewer)
             personal = standalone_sessions(member,b,viewer,admin)
             synthetic_chat(b,member,personal)
             check_migration_replay()

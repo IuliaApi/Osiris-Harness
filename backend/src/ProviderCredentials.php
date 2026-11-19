@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 final class ProviderCredentials
 {
-    public const PROVIDERS = ['openai', 'anthropic'];
+    public const KEY_PROVIDERS = ['openai', 'anthropic'];
+    public const LOGIN_PREFIX = "\0login:";
+
+    public static function validProvider(mixed $provider): bool
+    {
+        return is_string($provider) && AIProvider::validProvider($provider);
+    }
 
     private static function encryptionKey(): string
     {
@@ -33,18 +39,21 @@ final class ProviderCredentials
     {
         $blob = base64_decode($sealed, true);
         $value = is_string($blob) && strlen($blob) > 28 ? openssl_decrypt(substr($blob, 28), 'aes-256-gcm', self::encryptionKey(), OPENSSL_RAW_DATA, substr($blob, 0, 12), substr($blob, 12, 16), $user . "\0" . $provider) : false;
-        if (!is_string($value) || !preg_match('/\A[!-~]{1,4096}\z/D', $value)) { throw new ApiError(503, 'Credential vault unavailable', 'vault_unavailable'); }
+        if (!is_string($value) || (!str_starts_with($value,self::LOGIN_PREFIX) && !preg_match('/\A[!-~]{1,4096}\z/D', $value))) { throw new ApiError(503, 'Credential vault unavailable', 'vault_unavailable'); }
         return $value;
     }
 
     public static function handleRequest(PDO $db, Auth $auth, string $method, string $path): void
     {
-        if (!preg_match('~\A/api/credentials/(openai|anthropic)\z~D', $path, $match)) { return; }
+        if (!preg_match('~\A/api/credentials/([a-z0-9][a-z0-9.-]{0,79})\z~D', $path, $match)) { return; }
+        $provider = $match[1];
+        $keyProvider = in_array($provider, self::KEY_PROVIDERS, true);
+        if (!$keyProvider && (!RouterConnection::enabled() || $method !== 'DELETE')) { throw new ApiError(404, 'Resource not found', 'not_found'); }
         $actor = $auth->user();
-        requireHttpMethod($method, ['PUT','DELETE']);
+        requireHttpMethod($method, $keyProvider ? ['PUT','DELETE'] : ['DELETE']);
         if ($actor['role'] === 'viewer') { throw new ApiError(403, 'Provider key management requires a writable account', 'forbidden'); }
         if (queryParams()) { throw new ApiError(400, 'Credentials accept no query parameters'); }
-        $provider = $match[1]; $user = $actor['id'];
+        $user = $actor['id'];
         if ($method === 'DELETE') {
             inDatabaseTransaction($db, function () use ($db,$auth,$user,$provider) {
                 executeSql($db, 'DELETE FROM provider_credentials WHERE user_id = ? AND provider = ?', [$user,$provider]);
@@ -58,7 +67,7 @@ final class ProviderCredentials
         }
         $sealed = self::seal($user,$provider,$body['apiKey']);
         inDatabaseTransaction($db, function () use ($db,$auth,$user,$provider,$sealed) {
-            executeSql($db, 'INSERT INTO provider_credentials(user_id,provider,sealed_key) VALUES (?,?,?) ON CONFLICT (user_id,provider) DO UPDATE SET sealed_key = EXCLUDED.sealed_key', [$user,$provider,$sealed]);
+            executeSql($db, "INSERT INTO provider_credentials(user_id,provider,sealed_key) VALUES (?,?,?) ON CONFLICT (user_id,provider) DO UPDATE SET sealed_key = EXCLUDED.sealed_key, auth_type='apiKey'", [$user,$provider,$sealed]);
             $auth->audit('credential.set',$provider);
         });
         respond(['provider' => $provider, 'configured' => true, '_links' => ['runtime' => apiLink('/api/runtime'), 'deleteCredential' => apiLink($path,'DELETE')]]);

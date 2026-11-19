@@ -129,11 +129,133 @@ paths:
         "406": {$ref: "#/components/responses/NotAcceptable"}
         "500": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
+  /api/provider-logins:
+    get:
+      operationId: listProviderLogins
+      description: Available native sign-in methods, not entitlements. Requires router mode.
+      responses:
+        "200": {$ref: "#/components/responses/ProviderLogins"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+    post:
+      operationId: startProviderLogin
+      description: Start an SDK sign-in transaction bound to this login session.
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: "#/components/schemas/StartProviderLogin"}}
+          application/xml: {schema: {$ref: "#/components/schemas/StartProviderLogin"}}
+          text/xml: {schema: {$ref: "#/components/schemas/StartProviderLogin"}}
+          application/yaml: {schema: {$ref: "#/components/schemas/StartProviderLogin"}}
+          text/yaml: {schema: {$ref: "#/components/schemas/StartProviderLogin"}}
+      responses:
+        "200": {$ref: "#/components/responses/ProviderLoginState"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/provider-logins/{loginId}/status:
+    parameters: [{name: loginId, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{64}$'}}]
+    post:
+      operationId: statusProviderLogin
+      description: Advance an existing transaction; on completion the API saves its credential privately.
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: "#/components/schemas/Empty"}}
+          application/xml: {schema: {$ref: "#/components/schemas/Empty"}}
+          text/xml: {schema: {$ref: "#/components/schemas/Empty"}}
+          application/yaml: {schema: {$ref: "#/components/schemas/Empty"}}
+          text/yaml: {schema: {$ref: "#/components/schemas/Empty"}}
+      responses:
+        "200": {$ref: "#/components/responses/ProviderLoginState"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/provider-logins/{loginId}/answer:
+    parameters: [{name: loginId, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{64}$'}}]
+    post:
+      operationId: answerProviderLogin
+      description: Answer only the current SDK prompt.
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: "#/components/schemas/ProviderLoginAnswer"}}
+          application/xml: {schema: {$ref: "#/components/schemas/ProviderLoginAnswer"}}
+          text/xml: {schema: {$ref: "#/components/schemas/ProviderLoginAnswer"}}
+          application/yaml: {schema: {$ref: "#/components/schemas/ProviderLoginAnswer"}}
+          text/yaml: {schema: {$ref: "#/components/schemas/ProviderLoginAnswer"}}
+      responses:
+        "200": {$ref: "#/components/responses/ProviderLoginState"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/provider-logins/{loginId}/cancel:
+    parameters: [{name: loginId, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{64}$'}}]
+    post:
+      operationId: cancelProviderLogin
+      description: Stop a pending provider sign-in.
+      security: [{sessionCookie: [], csrfHeader: []}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: "#/components/schemas/Empty"}}
+          application/xml: {schema: {$ref: "#/components/schemas/Empty"}}
+          text/xml: {schema: {$ref: "#/components/schemas/Empty"}}
+          application/yaml: {schema: {$ref: "#/components/schemas/Empty"}}
+          text/yaml: {schema: {$ref: "#/components/schemas/Empty"}}
+      responses:
+        "200": {$ref: "#/components/responses/ProviderLoginState"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "406": {$ref: "#/components/responses/NotAcceptable"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /api/credentials/{provider}:
     parameters: [{$ref: "#/components/parameters/provider"}]
     put:
       operationId: setProviderCredential
-      description: "Store or replace your own encrypted cloud credential. No viewer writes; never echoes the key."
+      description: "Store or replace your own encrypted OpenAI or Anthropic API key. Other providers use the sign-in endpoints."
       security: [{sessionCookie: [], csrfHeader: []}]
       requestBody: {$ref: "#/components/requestBodies/CredentialInput"}
       responses:
@@ -151,7 +273,7 @@ paths:
         "503": {$ref: "#/components/responses/Error"}
     delete:
       operationId: deleteProviderCredential
-      description: "Remove your own cloud credential."
+      description: "Disconnect this provider from your account. Does not revoke the upstream grant or subscription."
       security: [{sessionCookie: [], csrfHeader: []}]
       responses:
         "204": {$ref: "#/components/responses/NoContent"}
@@ -922,6 +1044,11 @@ paths:
         "429": {$ref: "#/components/responses/RateLimited"}
         "500": {$ref: "#/components/responses/Error"}
 components:
+  headers:
+    ErrorPage:
+      description: "Canonical workspace recovery page for this HTTP status and application error code."
+      required: true
+      schema: {type: string, pattern: "^/errors/[45][0-9]{2}/[a-z][a-z0-9_]{0,63}$"}
   securitySchemes:
     sessionCookie:
       type: apiKey
@@ -941,7 +1068,7 @@ components:
     userId: {name: userId, in: path, required: true, schema: {type: string, minLength: 1}}
     turnId: {name: turnId, in: path, required: true, schema: {type: string, pattern: "^turn_[a-f0-9]{24}$"}}
     runId: {name: runId, in: path, required: true, schema: {type: string, minLength: 1}}
-    provider: {name: provider, in: path, required: true, schema: {type: string, enum: [openai, anthropic]}}
+    provider: {name: provider, in: path, required: true, schema: {$ref: "#/components/schemas/ChatProvider"}}
     ifMatch:
       name: If-Match
       in: header
@@ -1196,6 +1323,22 @@ components:
         application/yaml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
         text/xml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
         text/yaml: {schema: {$ref: "#/components/schemas/ChatPermissions"}}
+    ProviderLogins:
+      description: Sign-in methods enabled by the router.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ProviderLogins"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ProviderLogins"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ProviderLogins"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ProviderLogins"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ProviderLogins"}}
+    ProviderLoginState:
+      description: Sign-in progress and allowed next actions; never contains a provider credential.
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/ProviderLoginState"}}
+        application/xml: {schema: {$ref: "#/components/schemas/ProviderLoginState"}}
+        text/xml: {schema: {$ref: "#/components/schemas/ProviderLoginState"}}
+        application/yaml: {schema: {$ref: "#/components/schemas/ProviderLoginState"}}
+        text/yaml: {schema: {$ref: "#/components/schemas/ProviderLoginState"}}
     ModelCatalog:
       description: "Model inventory without credentials or raw upstream responses."
       content:
@@ -1367,8 +1510,10 @@ components:
         text/xml: {schema: {$ref: "#/components/schemas/Member"}}
         text/yaml: {schema: {$ref: "#/components/schemas/Member"}}
     Error:
-      description: "Structured, negotiated error. The body requestId matches X-Request-Id."
+      description: "Structured errors include the X-Request-Id in the body. An HTML-preferring browser receives a recovery page with the same failure status. Link rel=help also identifies this page."
+      headers: {X-Error-Page: {$ref: "#/components/headers/ErrorPage"}}
       content:
+        text/html: {schema: {type: string}}
         application/json: {schema: {$ref: "#/components/schemas/Error"}}
         application/xml: {schema: {$ref: "#/components/schemas/Error"}}
         application/yaml: {schema: {$ref: "#/components/schemas/Error"}}
@@ -1376,11 +1521,16 @@ components:
         text/yaml: {schema: {$ref: "#/components/schemas/Error"}}
     NoContent: {description: "Success; no response body."}
     NotAcceptable:
-      description: "No acceptable representation. Always a JSON error, independent of Accept."
-      content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+      description: "No acceptable data representation. HTML-preferring browsers receive the recovery page; other unsupported Accept values receive JSON."
+      headers: {X-Error-Page: {$ref: "#/components/headers/ErrorPage"}}
+      content:
+        application/json: {schema: {$ref: "#/components/schemas/Error"}}
+        text/html: {schema: {type: string}}
     RateLimited:
       description: "Request or dispatch limit reached. Retry only after the limit resets."
+      headers: {X-Error-Page: {$ref: "#/components/headers/ErrorPage"}}
       content:
+        text/html: {schema: {type: string}}
         application/json: {schema: {$ref: "#/components/schemas/Error"}}
         application/xml: {schema: {$ref: "#/components/schemas/Error"}}
         application/yaml: {schema: {$ref: "#/components/schemas/Error"}}
@@ -1825,13 +1975,74 @@ components:
         goal: {type: [string, "null"], maxLength: 2000}
         status: {enum: [none, active, paused, done]}
       additionalProperties: false
+    ProviderLogins:
+      type: object
+      required: [providers, _links]
+      additionalProperties: false
+      properties:
+        _links: {$ref: "#/components/schemas/Links"}
+        providers:
+          type: array
+          items:
+            type: object
+            required: [id, name, provider, available]
+            additionalProperties: false
+            properties:
+              id: {type: string, pattern: '^[a-z0-9][a-z0-9.-]{0,79}$'}
+              name: {type: string, minLength: 1}
+              provider: {$ref: "#/components/schemas/ChatProvider"}
+              available: {type: boolean}
+              reason: {type: string}
+    StartProviderLogin:
+      type: object
+      required: [provider]
+      additionalProperties: false
+      properties: {provider: {$ref: "#/components/schemas/ChatProvider"}}
+    ProviderLoginAnswer:
+      type: object
+      required: [promptId, answer]
+      additionalProperties: false
+      properties:
+        promptId: {type: string, pattern: '^[a-f0-9]{32}$'}
+        answer: {type: string, maxLength: 16384, writeOnly: true}
+    ProviderLoginState:
+      type: object
+      required: [id, provider, state]
+      additionalProperties: false
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{64}$'}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
+        loginId: {$ref: "#/components/schemas/ChatProvider"}
+        state: {enum: [pending, completed, cancelled]}
+        expiresAt: {type: integer}
+        url: {type: string, format: uri}
+        message: {type: string}
+        prompt:
+          type: object
+          required: [id, message, secret, allowEmpty]
+          additionalProperties: false
+          properties:
+            id: {type: string, pattern: '^[a-f0-9]{32}$'}
+            message: {type: string}
+            secret: {type: boolean}
+            allowEmpty: {type: boolean}
+            placeholder: {type: string}
+        _links: {$ref: "#/components/schemas/Links"}
+    ChatProvider:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9.-]{0,79}$'
+    ModelSelection:
+      type: object
+      properties:
+        model: {type: string, maxLength: 240, pattern: '^(?!.*\/(?:\.|\.\.)(?:\/|$))~?[A-Za-z0-9][A-Za-z0-9_.:@+()\[\]~-]*(?:/[A-Za-z0-9_.:@+()\[\]~-]+)*$'}
     AsideInput:
       type: object
+      allOf: [{$ref: "#/components/schemas/ModelSelection"}]
       required: [message, provider, model]
       properties:
         message: {type: string, minLength: 1, maxLength: 6000}
-        provider: {enum: [openai, anthropic, ollama]}
-        model: {type: string, minLength: 1, maxLength: 80}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
+        model: {type: string}
         replyTo: {type: string, pattern: '^aside_[a-f0-9]{24}$'}
       additionalProperties: false
     AsideHistory:
@@ -1846,7 +2057,7 @@ components:
         id: {type: string, pattern: '^aside_[a-f0-9]{24}$'}
         question: {type: string, minLength: 1, maxLength: 6000}
         answer: {type: string, minLength: 1, maxLength: 10000}
-        provider: {enum: [openai, anthropic, ollama]}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
         model: {type: string}
       additionalProperties: false
     ChatPermissions:
@@ -1865,21 +2076,23 @@ components:
             type: object
             required: [id, label, status, models]
             properties:
-              id: {enum: [openai, anthropic, ollama]}
+              id: {$ref: "#/components/schemas/ChatProvider"}
               label: {type: string}
               status: {enum: [available, not_configured, unavailable]}
               models: {type: array, uniqueItems: true, items: {type: string, minLength: 1}}
+              source: {const: catalog, description: SDK catalog identifiers; entitlement is checked by the provider on dispatch.}
               truncated: {const: true, description: "Only present when the inventory limit was reached."}
             additionalProperties: false
       additionalProperties: false
     AgentInput:
       type: object
+      allOf: [{$ref: "#/components/schemas/ModelSelection"}]
       required: [message, tools]
       properties:
         message: {type: string, minLength: 1, maxLength: 6000}
         tools: {type: boolean}
-        provider: {type: string, enum: [openai, anthropic, ollama]}
-        model: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}$"}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
+        model: {type: string}
       additionalProperties: false
     AgentEvent:
       type: object
@@ -1898,7 +2111,7 @@ components:
         id: {type: string, pattern: "^turn_[a-f0-9]{24}$"}
         sessionId: {type: string}
         prompt: {type: string}
-        provider: {enum: [openai, anthropic, ollama]}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
         model: {type: string}
         tools: {type: boolean}
         status: {enum: [ready, working, review, completed, failed, cancelled]}
@@ -1913,11 +2126,12 @@ components:
       additionalProperties: false
     ChatInput:
       type: object
+      allOf: [{$ref: "#/components/schemas/ModelSelection"}]
       required: [message]
       properties:
         message: {type: string, minLength: 1, maxLength: 6000}
-        provider: {type: string, enum: [openai, anthropic, ollama]}
-        model: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}$"}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
+        model: {type: string}
       additionalProperties: false
     ChatResult:
       type: object
@@ -1926,7 +2140,7 @@ components:
         sessionId: {type: string, minLength: 1}
         userMessage: {$ref: "#/components/schemas/Message"}
         assistantMessage: {$ref: "#/components/schemas/Message"}
-        provider: {type: string, enum: [openai, anthropic, ollama]}
+        provider: {$ref: "#/components/schemas/ChatProvider"}
         model: {type: string, minLength: 1, maxLength: 10000}
     CredentialInput:
       type: object
@@ -1945,9 +2159,10 @@ components:
       type: object
       required: [id, label, defaultModel, configured, connected, note]
       properties:
-        id: {type: string, enum: [openai, anthropic, ollama]}
+        id: {$ref: "#/components/schemas/ChatProvider"}
         label: {type: string, minLength: 1, maxLength: 10000}
-        defaultModel: {type: string, minLength: 1, maxLength: 10000}
+        defaultModel: {type: string, maxLength: 240, description: "Empty when the account must explicitly select a model."}
+        authType: {enum: [apiKey, login]}
         configured: {type: boolean}
         connected: {type: boolean}
         note: {type: string}
@@ -1963,7 +2178,7 @@ components:
           required: [defaultProvider, providers, connected, note, _links]
           properties:
             routing: {type: string, enum: [direct, oh-my-pi]}
-            defaultProvider: {type: string, enum: [openai, anthropic, ollama]}
+            defaultProvider: {$ref: "#/components/schemas/ChatProvider"}
             providers: {type: array, items: {$ref: "#/components/schemas/Provider"}}
             connected: {type: boolean}
             note: {type: string}
@@ -2188,6 +2403,7 @@ components:
         toolRuns: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}}}]}
         requestTool: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
         setCredential: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: PUT}}}]}
+        loginMethods: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: GET}, href: {const: /api/provider-logins}}}]}
         deleteCredential:
           allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: DELETE}}}]
         approve: {allOf: [{$ref: "#/components/schemas/Link"}, {properties: {method: {const: POST}}}]}
