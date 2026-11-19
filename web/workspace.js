@@ -180,7 +180,7 @@ function modelChoice(){
   const ai=appState.runtime?.ai;if(!ai)return null;
   let pref;try{pref=JSON.parse(localStorage.getItem('osiris:model:'+appState.userId));}catch{}
   if(pref&&ai.providers.some(p=>p.id===pref.provider)&&typeof pref.model==='string'&&pref.model)return {provider:pref.provider,model:pref.model};
-  const provider=ai.providers.find(p=>p.id===ai.defaultProvider)||ai.providers[0];
+  const provider=ai.providers.find(p=>p.configured&&p.id!=='ollama')||ai.providers.find(p=>p.id==='openai')||ai.providers[0];
   return provider?{provider:provider.id,model:provider.defaultModel}:null;
 }
 function renderSettings(body,runtime){
