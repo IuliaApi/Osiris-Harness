@@ -406,7 +406,9 @@ def exercise_registration(browser, private_project):
         project_url = base + private_project["_links"]["self"]["href"]
         assert context.request.get(project_url).status == 404
 
-        page.reload()
+        page.goto(base + "/register")  # An existing session must not silently bypass this form.
+        expect(page.get_by_role("button", name="Create account", exact=True)).to_be_visible()
+        page.goto(base + "/dashboard")
         expect(page.locator("#greeting")).to_have_text("Welcome back, " + username)
         expect(page.locator("#api-state")).to_have_text("API connected")
         page.get_by_role("button", name="Log out", exact=True).click()
@@ -414,11 +416,13 @@ def exercise_registration(browser, private_project):
         assert context.request.get(base + "/auth/me").status == 401
         page.get_by_role("link", name="Create account", exact=True).click()
         page.get_by_label("Username", exact=True).fill(username)
-        page.get_by_label("Password", exact=True).fill(secret)
+        page.get_by_label("Password", exact=True).fill("different-" + uuid4().hex)
         page.get_by_role("button", name="Create account", exact=True).click()
-        expect(page).to_have_url(base + "/errors/409/conflict")
-        expect(page.get_by_role("heading", name="Record conflict")).to_be_visible()
-        page.get_by_role("link", name="Back to registration", exact=True).click()
+        conflict = page.get_by_role("dialog", name="Username already taken")
+        expect(conflict).to_be_visible()
+        assert context.request.get(base + "/auth/me").status == 401
+        conflict.get_by_role("button", name="Choose another name").click()
+        expect(page.get_by_label("Username", exact=True)).to_be_focused()
         expect(page).to_have_url(base + "/register")
         expect(page.get_by_label("Password", exact=True)).to_have_value("")
         login(page, username, secret)

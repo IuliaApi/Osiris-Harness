@@ -24,6 +24,14 @@
     <div class="notice" role="alert" id="auth-error"></div>
     <a id="auth-switch" href="/register">Create account</a>
   </form>
+  <dialog id="username-taken" class="command-menu" aria-labelledby="username-taken-title" aria-describedby="username-taken-help">
+    <div class="command-head"><h2 id="username-taken-title">Username already taken</h2></div>
+    <p id="username-taken-help">Choose a different username, or sign in if this account is yours.</p>
+    <form method="dialog" class="actions">
+      <button class="btn-os primary" type="submit" autofocus>Choose another name</button>
+      <a class="btn-os" href="/login">Sign in</a>
+    </form>
+  </dialog>
 </div>
 <div id="app" class="app hidden">
   <aside class="sidebar">

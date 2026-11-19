@@ -64,7 +64,8 @@ async function request(method, path, payload, headers) {
   }
   if (!result.ok) {
     const anonymousDiscovery = result.status === 401 && method === 'GET' && path === '/auth/me' && !appState.name;
-    if (!anonymousDiscovery) navigateToError(result.errorPage);
+    const usernameTaken = result.status === 409 && method === 'POST' && path === '/auth/register';
+    if (!anonymousDiscovery && !usernameTaken) navigateToError(result.errorPage);
     const error = new Error(`${result.data?.error || 'Request failed'} (HTTP ${result.status}; request ${result.requestId || 'unknown'})`);
     error.status = result.status;
     throw error;
@@ -354,7 +355,11 @@ async function submitAuth(event, landing) {
     updatePasswordChecks();
     await go(registering ? '/dashboard' : landing, true);
   } catch (err) {
-    if (!navigatingToError) error.textContent = err.message;
+    if (registering && err.status === 409) {
+      password.value = '';
+      updatePasswordChecks();
+      $('username-taken').showModal();
+    } else if (!navigatingToError) error.textContent = err.message;
   } finally {
     submit.disabled = false;
   }
@@ -377,6 +382,10 @@ async function init(){
   for(const b of document.querySelectorAll('[data-action="new-session"]'))b.onclick=openNewSession;
   const landing = views[location.pathname] ? location.pathname + location.search : '/dashboard';
   $('auth-password').addEventListener('input', updatePasswordChecks);
+  $('username-taken').addEventListener('close', () => {
+    $('auth-name').focus();
+    $('auth-name').select();
+  });
   bind('auth-form','submit',event => submitAuth(event, landing));
   bind('logout','click',async()=>{await follow(rel(appState.root,'logout','POST'));workbench.forgetTab();location.replace('/login');});
   bind('filter-form','submit',e=>{e.preventDefault();return loadSessions();});
@@ -385,9 +394,12 @@ async function init(){
   bind('session-form','submit',createSession);bind('project-form','submit',createProject);bind('archive-session','click',workbench.archive);bind('refresh-sessions','click',renderRoute);
   window.addEventListener('popstate',renderRoute);
   window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
-  try{signedIn(await request('GET','/auth/me'));}catch(e){
-    if (navigatingToError) return;
-    if(e.status!==401)$('auth-error').textContent=e.message;
+  // An existing cookie restores workspace pages, never an explicit sign-in or registration form.
+  if (location.pathname !== '/register' && location.pathname !== '/login') {
+    try { signedIn(await request('GET','/auth/me')); } catch (e) {
+      if (navigatingToError) return;
+      if (e.status !== 401) $('auth-error').textContent = e.message;
+    }
   }
   await renderRoute();
 }

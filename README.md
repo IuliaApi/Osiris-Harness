@@ -52,6 +52,8 @@ Use a normal, visible app window. Minimized, elevated, protected, or GPU-rendere
 
 Send `{ "username": "…", "password": "…" }` to `POST /auth/register` for a new account (`201`), or `POST /auth/login` for an existing one (`200`). Both return a session cookie and `csrfToken`. Send the cookie on subsequent requests and `X-CSRF-Token` on writes. `GET /auth/me` restores the signed-in client; `POST /auth/logout` revokes its session. Registration always creates a `member`; only the operator can assign privileged roles. Supply credentials in request bodies, never URLs.
 
+A taken username returns `409` without issuing a session. The browser stays on the registration form and offers a different name or sign-in. Opening `/login` or `/register` explicitly does not skip the form when the browser already has a session cookie.
+
 `GET /api` is the authenticated entry point. Follow `_links`: each relation carries a site-relative `href` and HTTP `method`. Follow the root `createSession` link with `{ "title": "New chat" }` to start a private conversation (`projectId: null`). To start a project conversation, use the project's `createSession` link. Both return a `chat` link for sending messages. The server enforces permissions on every request.
 
 For tool-capable clients, follow `startAgent` with `{ "message": "...", "provider": "ollama", "model": "qwen3:1.7b", "tools": true }`. Each `step` link takes `{}` and runs at most one model request. Read the `self` link after an interrupted connection; never blindly replay a step. `review` means one or more writes await approval and application. The `agent` link recovers the current account's last turn in this thread.

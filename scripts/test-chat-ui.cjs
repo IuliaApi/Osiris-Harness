@@ -291,11 +291,11 @@ async function main() {
       await click('#auth-switch');
       await until('second registration form', () => document.querySelector('#auth-submit')?.textContent === 'Create account');
       await submitRegistration();
-      await until('actual duplicate registration redirect', () => location.pathname === '/errors/409/conflict' && document.querySelector('h1')?.textContent === 'Record conflict');
-      await click('a[href="/register"]');
-      await until('back at registration', () => location.pathname === '/register' && document.querySelector('#auth-submit')?.textContent === 'Create account');
+      await until('duplicate registration popup', () => location.pathname === '/register' && document.querySelector('#username-taken')?.open);
+      await click('#username-taken a[href="/login"]');
+      await until('sign in after conflict', () => location.pathname === '/login' && document.querySelector('#auth-submit')?.textContent === 'Sign in');
       assert.equal(await page(() => document.querySelector('#auth-password').value.length), 0);
-      console.log('PASS: real registration conflict navigated to its 409 page; Back reopened registration without replay');
+      console.log('PASS: a duplicate registration leaves the user signed out and offers sign-in from the popup');
     } else {
       // Oversized login is rejected by the real HTTP parser before any DB access.
       await page(() => document.querySelector('#auth-name').focus());
