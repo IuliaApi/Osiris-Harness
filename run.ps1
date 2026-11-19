@@ -33,7 +33,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'The local database did not start.' }
     $env:OSIRIS_DATABASE_NAME = & (Join-Path $PSScriptRoot 'scripts\prepare-db.ps1') -EmptyDemo:$EmptyDemo
     $env:OSIRIS_PORT = [string]$Port
-    docker compose up -d --build --wait api
+    $callbacks = & (Join-Path $PSScriptRoot 'scripts\provider-callbacks.ps1') -WorkspacePort $Port
+    $callbacks | docker compose -f compose.yaml -f - up -d --build --wait api
     if ($LASTEXITCODE -ne 0) { throw 'Could not start the API. Check docker compose logs api and whether the port is occupied.' }
     Write-Host "Osiris: http://127.0.0.1:$Port/"
     if ($Tools) {

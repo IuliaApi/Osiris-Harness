@@ -8,6 +8,7 @@ import {
 import { authPolicyFor, authProviders } from '@oh-my-pi/pi-catalog/compat/auth';
 import { setTransports } from '@oh-my-pi/pi-utils/logger';
 import { isLocalGateway, localProviderUrl } from './local-providers';
+import { validCallbackCode } from './browser-callback';
 
 // These flows handle secrets. Never enable the SDK's default rotating log files on the service.
 setTransports({file:false, console:false});
@@ -25,6 +26,14 @@ const unsupported:Record<string,string> = {
 for (const id of ['exa','kagi','parallel','perplexity','tavily']) unsupported[id]='The SDK uses this sign-in for web search, not chat.';
 for (const id of ['cloudflare-workers-ai','liquid','nace','typesafe']) unsupported[id]='The SDK offers decision/judge models here, not chat.';
 
+// Some key-entry methods offer a dashboard link. That alone isn't a browser sign-in.
+const browserHooks:Record<string,true> = {'github-copilot':true,cursor:true,'devin-windsurf':true,'openai-codex-device':true,
+  'kiro-login':true,snowflake:true,kilo:true,'mistral-vibe-sign-in':true};
+function opensBrowser(id:string) {
+  const login=authPolicyFor(id)?.login;
+  return login?.kind==='oauth-code' || login?.kind==='device-code' || (login?.kind==='custom' && Object.hasOwn(browserHooks,login.hook));
+}
+
 export function loginRegistry() {
   const official = getOAuthProviders();
   const rows = official.map(info => {
@@ -32,12 +41,12 @@ export function loginRegistry() {
     const configured = workerData?.osirisLoginWorker ? workerData.provider===info.id && !!workerData.localUrl : !!localProviderUrl(info.id);
     const reason = unsupported[info.id] ?? (local && !configured ? 'Requires an operator-configured local provider port.' :
       !info.available ? 'Unavailable according to the installed provider SDK.' : undefined);
-    return {id:info.id, name:info.name, provider:info.storeCredentialsAs ?? info.id, available:!reason, ...(reason && {reason})};
+    return {id:info.id, name:info.name, provider:info.storeCredentialsAs ?? info.id, available:!reason, browser:opensBrowser(info.id), ...(reason && {reason})};
   });
   // The SDK intentionally omits paused logins from getOAuthProviders(); display, never re-enable them.
   for (const policy of authProviders()) {
     if (policy.disabled && policy.login && policy.showInLoginList !== false && !rows.some(row => row.id === policy.id)) {
-      rows.push({id:policy.id, name:policy.name, provider:policy.storeAs ?? policy.id, available:false, reason:policy.disabled});
+      rows.push({id:policy.id, name:policy.name, provider:policy.storeAs ?? policy.id, available:false, browser:opensBrowser(policy.id), reason:policy.disabled});
     }
   }
   return rows;
@@ -89,8 +98,8 @@ async function rotate(provider:string, credential:string, signal:AbortSignal) {
   return encode({provider,type:'oauth',expires:data.expires,data});
 }
 
-export type BrowserPrompt = {id:string,message:string,secret:boolean,allowEmpty:boolean,placeholder?:string};
-type PromptRule = {message:string, secret:boolean, allowEmpty:boolean, accepts:(answer:string)=>boolean};
+export type BrowserPrompt = {id:string,message:string,secret:boolean,allowEmpty:boolean,callback?:boolean,placeholder?:string};
+type PromptRule = Omit<BrowserPrompt,'id'|'placeholder'> & {accepts:(answer:string)=>boolean};
 const scalarKey = (s:string) => /^[A-Za-z0-9._~+/=:@%-]{1,8192}$/.test(s) && !s.includes('://') && !s.startsWith('/') && !s.startsWith('@');
 const clean = (s:string,max:number) => s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,'').slice(0,max);
 
@@ -124,12 +133,12 @@ export function callbackRule(authorize:URL):PromptRule {
   const local = redirect.protocol==='http:' && ['localhost','127.0.0.1','[::1]'].includes(redirect.hostname);
   if (!(local || ['zcode:', 'vscode:'].includes(redirect.protocol)) || redirect.username || redirect.password) throw new Error('Unsupported callback origin');
   const endpoint = `${redirect.protocol}//${redirect.host}${redirect.pathname}`;
-  return {message:`After signing in, paste the entire redirect URL (${endpoint}), including its query. The browser may show a connection error; no host callback port is published.`,secret:true,allowEmpty:false,
+  return {message:`If sign-in does not finish automatically, paste the entire redirect URL (${endpoint}), including its query.`,secret:true,allowEmpty:false,callback:true,
     accepts(input) {
       try {
         const url=new URL(input), code=url.searchParams.getAll('code');
         return url.protocol===redirect.protocol && url.host===redirect.host && url.pathname===redirect.pathname && !url.username && !url.password &&
-          !url.hash && code.length===1 && /^[A-Za-z0-9._~+/=%:-]{1,8192}$/.test(code[0]) &&
+          !url.hash && code.length===1 && validCallbackCode(code[0]) &&
           (expectedState ? url.searchParams.getAll('state').length===1 && url.searchParams.get('state')===expectedState : true);
       } catch { return false; }
     }};
@@ -155,7 +164,7 @@ async function runWorker() {
     const abort=()=>{if(pending?.id===id){pending=undefined;reject(new Error('Prompt closed'));}};
     pending={id,rule,resolve:(s)=>{signal?.removeEventListener('abort',abort);resolve(s);},reject};
     signal?.addEventListener('abort',abort,{once:true});
-    port.postMessage({prompt:{id,message:rule.message,secret:rule.secret,allowEmpty:rule.allowEmpty}});
+    port.postMessage({prompt:{id,message:rule.message,secret:rule.secret,allowEmpty:rule.allowEmpty,...(rule.callback && {callback:true})}});
     return promise;
   }
   try {

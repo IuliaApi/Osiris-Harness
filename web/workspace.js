@@ -212,12 +212,15 @@ function openProviderSettings(){
   manager={link:rel(appState.root,'runtime','GET'),kind:'settings',label:'Model settings & credentials'};
   return go('/manage');
 }
+function connectProvider(node, link, refresh) {
+  return showProviderLogin(node,link,{el,follow,rel,refresh,notify});
+}
 function renderSettings(body,runtime){
   appState.runtime=runtime;const providers=runtime.ai.providers,choice=modelChoice();
   const methods=rel(runtime.ai,'loginMethods','GET');
   if(methods){
-    const node=section(body,'Connect a provider','Link your own provider account or subscription. Some providers validate keys against their service; review the prompts before continuing.');
-    void showProviderLogin(node,methods,{el,follow,rel,refresh:renderManage,notify});
+    const node=section(body,'Connect a provider','Choose how to sign in to your provider.');
+    void connectProvider(node,methods,renderManage);
   }
   if(choice){
     const node=section(body,'Chat model',`Default for new threads: ${choice.model?choice.provider+' / '+choice.model:'No model selected'}. This preference is saved in this browser.`);
@@ -389,5 +392,5 @@ async function init(){
   await renderRoute();
 }
 const apiChecks = createApiChecks({ appState, rel, queryLink, fetchResponse, refreshData, addErrorLink });
-const workbench = createChatWorkbench({state:appState, follow, rel, queryLink, go, projectName, modelChoice, notify, button, openProviderSettings});
+const workbench = createChatWorkbench({state:appState, follow, rel, queryLink, go, projectName, modelChoice, notify, button, openProviderSettings, connectProvider});
 init().catch(e=>notify(e.message));

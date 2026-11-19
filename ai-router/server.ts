@@ -1,9 +1,16 @@
 import { timingSafeEqual } from 'node:crypto';
 import { listModels, reply, RouteError } from './router';
-import { authRequest, AuthError, loginRegistry } from './auth';
+import { authRequest, AuthError, loginRegistry, browserCallbackRequest } from './auth';
 const key=(await Bun.file(process.env.OSIRIS_AI_ROUTER_KEY_FILE||'/run/osiris/router.key').text()).trim();
 if(!/^[A-Za-z0-9+/]{43}=$/.test(key))throw Error('Invalid router authentication configuration');
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
+const publishedPorts=process.env.OSIRIS_BROWSER_CALLBACKS==='1'
+  ? new Set((process.env.OSIRIS_BROWSER_CALLBACK_PORTS ?? '').split(',').map(s=>s.trim()).filter(Boolean)) : undefined;
+
+// Only this listener is published to host loopback. It has no private router routes.
+if (publishedPorts) {
+  Bun.serve({port:8091,hostname:'0.0.0.0',development:false,maxRequestBodySize:1024,idleTimeout:5,fetch:browserCallbackRequest});
+}
 // PHP may replay four completed rounds (including Unicode file content); bound that body separately from output.
 Bun.serve({port:8090,hostname:'0.0.0.0',maxRequestBodySize:2*1024*1024,idleTimeout:90,async fetch(req){
   const url=new URL(req.url);
@@ -18,7 +25,7 @@ Bun.serve({port:8090,hostname:'0.0.0.0',maxRequestBodySize:2*1024*1024,idleTimeo
   let input;
   try { input = await req.json(); } catch { return json({error:'Invalid JSON',code:'validation_error'},400); }
   try{
-    if (auth) return json(await authRequest(auth[1] as 'start'|'status'|'answer'|'cancel'|'resolve', input));
+    if (auth) return json(await authRequest(auth[1],input,publishedPorts));
     return json(await (url.pathname === '/chat' ? reply(input) : listModels(input)));
   }catch(error){
     if(error instanceof RouteError || error instanceof AuthError)return json({error:error.message,code:error.code},error.status);

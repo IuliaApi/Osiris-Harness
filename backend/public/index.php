@@ -23,6 +23,12 @@ register_shutdown_function(static function () use ($requestId, $started, $method
         'route' => $logRoute, 'status' => http_response_code(), 'durationMs' => round((microtime(true) - $started) * 1000)]));
 });
 try {
+    // GitLab's registered loopback URI shares Osiris's default port. Only the
+    // exact callback crosses into the separate listener; never forward cookies.
+    if ($path === '/callback' && ($_SERVER['HTTP_HOST'] ?? '') === 'localhost:8080' && RouterConnection::enabled()) {
+        requireHttpMethod($method, ['GET']);
+        ProviderLogin::gitLabCallback($_SERVER['QUERY_STRING'] ?? '');
+    }
     if (preg_match('~\\A/errors/([45][0-9]{2})/([a-z][a-z0-9_]{0,63})\\z~', $path, $errorPage)) {
         if (ErrorPage::url((int) $errorPage[1], $errorPage[2]) !== $path) throw new ApiError(404, 'Route not found', 'not_found');
         requireHttpMethod($method, ['GET', 'HEAD']);

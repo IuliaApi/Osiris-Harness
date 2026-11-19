@@ -1,0 +1,9 @@
+{
+  "openai-codex": "http://localhost:1455/auth/callback",
+  "anthropic": "http://localhost:54545/callback",
+  "google-gemini-cli": "http://127.0.0.1:8085/oauth2callback",
+  "snowflake": "http://127.0.0.1:54551/",
+  "devin": "http://127.0.0.1:59653/callback",
+  "devin-windsurf": "http://127.0.0.1:59654/callback",
+  "gitlab-duo": "http://localhost:8080/callback"
+}

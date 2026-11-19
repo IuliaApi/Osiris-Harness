@@ -5,12 +5,13 @@ import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { AuthError, loginRegistry, type BrowserPrompt } from './auth-provider';
 import { localProviderUrl } from './local-providers';
+import { bindCallback, receiveCallback, readyForCallback, type CallbackBinding } from './browser-callback';
 export { AuthError, loginAuth, loginRegistry } from './auth-provider';
 
 type State = 'pending' | 'completed' | 'cancelled' | 'failed';
 type Transaction = { id:string, actor:string, provider:string, loginId:string, expiresAt:number, state:State,
   timer:NodeJS.Timeout, worker?:Worker, url?:string, message?:string, prompt?:BrowserPrompt,
-  submitted?:BrowserPrompt, credential?:string };
+  callback?:CallbackBinding, submitted?:BrowserPrompt, credential?:string };
 const transactions = new Map<string,Transaction>();
 const ttl = 10 * 60_000;
 let loginWorkers = 0, refreshWorkers = 0;
@@ -33,7 +34,7 @@ function spawnWorker(data:Record<string,string>, onExit:()=>void) {
 }
 
 function end(t:Transaction,state:State,message?:string) {
-  t.state=state;t.message=message;delete t.url;delete t.prompt;delete t.submitted;
+  t.state=state;t.message=message;delete t.url;delete t.prompt;delete t.submitted;delete t.callback;
   if (state!=='completed') delete t.credential;
   const worker=t.worker;delete t.worker;
   if (worker) {
@@ -48,12 +49,13 @@ function drop(t:Transaction) {
 function view(t:Transaction) {
   // Internal only: PHP persists credential on completion, and must omit it from its public projection.
   const {id,state,provider,loginId,expiresAt,url,message,prompt,credential}=t;
-  return {id,state,provider,loginId,expiresAt,...(url&&{url}),...(message&&{message}),...(prompt&&{prompt}),...(credential&&{credential})};
+  return {id,state,provider,loginId,expiresAt,...(url&&{url}),...(message&&{message}),...(prompt&&{prompt}),
+    ...(readyForCallback(t,Date.now())&&{automaticCallback:true}),...(credential&&{credential})};
 }
 const invalid = () => new AuthError(422,'validation_error','Invalid provider sign-in request.');
 const busy = () => new AuthError(429,'login_busy','Too many active sign-ins. Try again shortly.');
 
-function start(actor:string,loginId:string) {
+function start(actor:string,loginId:string,publishedPorts?:ReadonlySet<string>) {
   const info=loginRegistry().find(row=>row.id===loginId);
   if (!info) throw invalid();
   if (!info.available) throw new AuthError(422,'login_unavailable',info.reason!);
@@ -78,7 +80,10 @@ function start(actor:string,loginId:string) {
     if (event.retry) {
       t.prompt=t.submitted;delete t.submitted;t.message=event.message;return;
     }
-    if (event.url) {t.url=event.url;t.message=event.message;}
+    if (event.url) {
+      t.url=event.url;t.message=event.message;
+      t.callback=publishedPorts?.size ? bindCallback(loginId,new URL(event.url),publishedPorts) : undefined;
+    }
     if (event.prompt) {t.prompt=event.prompt;delete t.submitted;}
   });
   return view(t);
@@ -97,8 +102,21 @@ async function resolve(provider:string, credential:string) {
   try {return await promise;} finally {clearTimeout(deadline);void w.terminate();}
 }
 
+function submit(t:Transaction,answer:string) {
+  const prompt=t.prompt!;
+  t.submitted=prompt;delete t.prompt;
+  t.worker!.postMessage({id:prompt.id,answer});
+}
+
+export function browserCallbackRequest(req:Request) {
+  return receiveCallback(req,transactions.values(),(t,answer)=>{
+    if (answer===null) end(t,'failed','The provider did not authorize this sign-in.');
+    else submit(t,answer);
+  });
+}
+
 /** Called only after server-to-server authentication. actor is supplied by PHP, never a public request. */
-export async function authRequest(action:string,raw:unknown) {
+export async function authRequest(action:string,raw:unknown,publishedPorts?:ReadonlySet<string>) {
   if (raw===null || typeof raw!=='object' || Array.isArray(raw)) throw invalid();
   const body=raw as Record<string,unknown>;
   const allowed = action==='resolve' ? ['provider','credential'] : action==='start' ? ['actor','provider'] :
@@ -107,7 +125,7 @@ export async function authRequest(action:string,raw:unknown) {
   if (action==='resolve') return resolve(body.provider as string,body.credential as string);
   const actor=body.actor as string;
   if (!/^[0-9a-f]{64}$/.test(actor)) throw invalid();
-  if (action==='start') return start(actor,body.provider as string);
+  if (action==='start') return start(actor,body.provider as string,publishedPorts);
   const t=transactions.get(body.id as string);
   if (!t || t.actor!==actor || Date.now()>=t.expiresAt) throw new AuthError(404,'login_not_found','This provider sign-in was not found or has expired.');
   if (action==='cancel') {drop(t);return view(t);}
@@ -115,8 +133,7 @@ export async function authRequest(action:string,raw:unknown) {
     if (t.state!=='pending' || !t.prompt || t.prompt.id!==body.promptId) throw new AuthError(409,'login_step_changed','The provider sign-in step changed. Refresh its status.');
     const answer=body.answer as string;
     if ((!answer && !t.prompt.allowEmpty) || Buffer.byteLength(answer)>16384 || /[\x00-\x1f\x7f]/.test(answer)) throw invalid();
-    t.submitted=t.prompt; delete t.prompt;
-    t.worker!.postMessage({id:body.promptId,answer});
+    submit(t,answer);
   }
   return view(t);
 }

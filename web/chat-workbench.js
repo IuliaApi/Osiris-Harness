@@ -18,7 +18,7 @@ const modes = new Map([
   ['yolo', ['YOLO', 'Apply valid file writes and edits without asking.']],
 ]);
 
-export function createChatWorkbench({state, follow, rel, queryLink, go, projectName, modelChoice, openProviderSettings, notify, button}) {
+export function createChatWorkbench({state, follow, rel, queryLink, go, projectName, modelChoice, openProviderSettings, connectProvider, notify, button}) {
   const {messageNode} = createMessageRenderer({notify});
   const editor = byId('message-text'), permissions = byId('thread-permissions');
   const picker = byId('thread-picker'), pickerList = byId('picker-list'), pickerSearch = byId('picker-search');
@@ -175,7 +175,9 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
   }
   const showing = view => picker.open && pickerView === view;
   byId('picker-close').addEventListener('click', () => picker.close());
+  picker.addEventListener('close', () => { if (!picker.open) pickerList.replaceChildren(); });
   picker.addEventListener('keydown', event => {
+    if (pickerView?.kind === 'login') return; // Preserve native form and select keys.
     if (event.defaultPrevented || event.isComposing || event.keyCode === 229 ||
         event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     const searchFocused = event.target === pickerSearch;
@@ -568,6 +570,19 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     '/name': {args:'[title]', help:'Rename this thread', run:async arg => {
       await rename(arg || undefined);
       return thread && `Thread: ${thread.title}`;
+    }},
+    '/login': {help:'Connect a model provider', run:async () => {
+      const link = rel(state.runtime?.ai, 'loginMethods', 'GET');
+      if (!link) throw new Error('Provider sign-in is not available for this account.');
+      const view = openPicker('login', 'Connect a provider');
+      const form = document.createElement('div');
+      form.className = 'fields';
+      pickerList.append(form);
+      await connectProvider(form, link, async () => {
+        state.runtime = await follow(rel(state.root, 'runtime', 'GET'));
+        if (showing(view)) { picker.close(); setModelChoice(choice); }
+      });
+      if (showing(view)) form.querySelector('select')?.focus();
     }},
     '/model': {args:'[provider/model]', help:'Show or change the model for this thread', run:arg => {
       if (!thread) throw new Error('Open a thread first.');

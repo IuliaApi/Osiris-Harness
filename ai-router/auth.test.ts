@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
 import { randomBytes } from 'node:crypto';
-import { authRequest, loginAuth, loginRegistry } from './auth';
+import { authRequest, browserCallbackRequest, loginAuth, loginRegistry } from './auth';
 import { callbackRule } from './auth-provider';
 
 const actor=()=>randomBytes(32).toString('hex');
 type View={id:string, provider:string, state:string, url?:string, message?:string,
-  prompt?:{id:string,message:string,secret:boolean,allowEmpty:boolean}, credential?:string};
+  automaticCallback?:boolean, prompt?:{id:string,message:string,secret:boolean,allowEmpty:boolean,callback?:boolean}, credential?:string};
 async function observe(owner:string,id:string,when:(v:View)=>boolean) {
   const deadline=Date.now()+15_000;
   do {
@@ -20,9 +20,12 @@ async function observe(owner:string,id:string,when:(v:View)=>boolean) {
 
 test('SDK roster includes subscriptions, canonical aliases, paused and unsupported methods with reasons',()=>{
   const rows=loginRegistry();
-  expect(rows.find(x=>x.id==='openai-codex-device')).toMatchObject({provider:'openai-codex',available:true});
-  expect(rows.find(x=>x.id==='anthropic')).toMatchObject({provider:'anthropic',available:true});
-  expect(rows.find(x=>x.id==='devin-windsurf')).toMatchObject({provider:'devin',available:true});
+  for (const id of ['anthropic','kimi-code','openai-codex-device','devin-windsurf','kilo','mistral','cursor','kiro','snowflake'])
+    expect(rows.find(x=>x.id===id)).toMatchObject({browser:true,available:true});
+  for (const id of ['ollama','vercel-ai-gateway','alibaba-token-plan','xiaomi','cloudflare-ai-gateway','devin-cli'])
+    expect(rows.find(x=>x.id===id)).toMatchObject({browser:false});
+  expect(rows.find(x=>x.id==='openai-codex-device')?.provider).toBe('openai-codex');
+  expect(rows.find(x=>x.id==='devin-windsurf')?.provider).toBe('devin');
   for(const id of ['devin-cli','antigravity-cli','google-antigravity']) {
     const row=rows.find(x=>x.id===id);expect(row?.available).toBe(false);expect(row?.reason).toBeTruthy();
   }
@@ -75,11 +78,35 @@ test('real subscription authorization URL and PKCE/state callback; cancel withou
     expect(auth.origin).toBe('https://claude.ai');expect(auth.searchParams.get('code_challenge')).toBeTruthy();
     const target=auth.searchParams.get('redirect_uri')!, state=auth.searchParams.get('state')!;
     expect(v.prompt!.message).toContain(target);expect(v.prompt!.secret).toBe(true);
+    expect(v.prompt!.callback).toBe(true);expect(v.automaticCallback).toBeUndefined();
     const rule=callbackRule(auth);
     expect(rule.accepts(`${target}?code=fake&state=${state}`)).toBe(true);
     for(const input of ['fake',`${target}?code=fake`,`${target}?code=fake&state=wrong`,
       `${target}/wrong?code=fake&state=${state}`,`https://evil.invalid/?code=fake&state=${state}`,`${target}?code=a&code=b&state=${state}`])
       expect(rule.accepts(input)).toBe(false);
+  } finally {await authRequest('cancel',{actor:owner,id});}
+},20_000);
+
+test('real SDK loopback sign-in binds one actor; provider denial consumes it without exchanging or exposing a code',async()=>{
+  const owner=actor(), ports=new Set(['59654']);
+  const {id}=await authRequest('start',{actor:owner,provider:'devin-windsurf'},ports) as View;
+  try {
+    const step=await observe(owner,id,v=>!!v.prompt);
+    expect(step.automaticCallback).toBe(true);expect(step.prompt!.callback).toBe(true);
+    expect(step.credential).toBeUndefined();
+    const auth=new URL(step.url!),target=auth.searchParams.get('redirect_uri')!,state=auth.searchParams.get('state')!;
+    const denial=(s:string)=>new Request(target+'?'+new URLSearchParams({state:s,error:'access_denied',error_description:'private upstream details'}),
+      {headers:{Host:new URL(target).host,Cookie:'private-cookie=ignored'}});
+    expect(browserCallbackRequest(denial(actor())).status).toBe(404);
+    await expect(authRequest('status',{actor:actor(),id})).rejects.toMatchObject({status:404});
+    const response=browserCallbackRequest(denial(state));
+    expect(response.status).toBe(200);
+    const text=await response.text();
+    for (const secret of [state,'private upstream details','private-cookie',owner,id]) expect(text).not.toContain(secret);
+    const final=await authRequest('status',{actor:owner,id}) as View;
+    expect(final.state).toBe('failed');expect(final.message).toContain('did not authorize');
+    expect(final.credential).toBeUndefined();expect(final.automaticCallback).toBeUndefined();expect(final.prompt).toBeUndefined();
+    expect(browserCallbackRequest(denial(state)).status).toBe(404);
   } finally {await authRequest('cancel',{actor:owner,id});}
 },20_000);
 

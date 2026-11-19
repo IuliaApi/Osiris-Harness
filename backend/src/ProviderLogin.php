@@ -42,6 +42,23 @@ final class ProviderLogin
         });
     }
 
+    public static function gitLabCallback(#[SensitiveParameter] string $query): never
+    {
+        if ($query === '' || strlen($query) > 16384) { throw new ApiError(422,'Invalid provider return','login_input_invalid'); }
+        $client = curl_init('http://ai-router:8091/callback?'.$query);
+        curl_setopt_array($client, [CURLOPT_HTTPHEADER=>['Host: localhost:8080'], CURLOPT_PROTOCOLS=>CURLPROTO_HTTP,
+            CURLOPT_PROXY=>'', CURLOPT_FOLLOWLOCATION=>false, CURLOPT_TIMEOUT_MS=>2000,
+            CURLOPT_WRITEFUNCTION=>static fn($unused, string $chunk): int => strlen($chunk)]);
+        $ok = curl_exec($client);
+        $status = curl_getinfo($client, CURLINFO_RESPONSE_CODE);
+        if (!$ok || $status >= 500) { throw self::invalidService(); }
+        if ($status < 200 || $status >= 300) { throw new ApiError(422,'Provider return did not match an active sign-in','login_input_invalid'); }
+        header('Referrer-Policy: no-referrer');
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Sign-in response received. Return to Osiris to finish connecting.';
+        exit;
+    }
+
     public static function handleRequest(PDO $db, Auth $auth, string $method, string $path): void
     {
         if ($path !== self::BASE && !preg_match('~\A/api/provider-logins/([a-f0-9]{64})/(status|answer|cancel)\z~D',$path,$m)) { return; }
@@ -53,8 +70,8 @@ final class ProviderLogin
             if (!is_array($rows) || !array_is_list($rows)) { throw self::invalidService(); }
             $methods = [];
             foreach ($rows as $row) {
-                if (!ProviderCredentials::validProvider($row['id'] ?? null) || !ProviderCredentials::validProvider($row['provider'] ?? null) || !is_string($row['name'] ?? null) || !is_bool($row['available'] ?? null)) { throw self::invalidService(); }
-                $methods[] = array_intersect_key($row,array_flip(['id','provider','name','available','reason']));
+                if (!ProviderCredentials::validProvider($row['id'] ?? null) || !ProviderCredentials::validProvider($row['provider'] ?? null) || !is_string($row['name'] ?? null) || !is_bool($row['available'] ?? null) || !is_bool($row['browser'] ?? null)) { throw self::invalidService(); }
+                $methods[] = array_intersect_key($row,array_flip(['id','provider','name','available','browser','reason']));
             }
             $links = ['self'=>apiLink(self::BASE)];
             if ($actor['role'] !== 'viewer') { $links['startLogin'] = apiLink(self::BASE,'POST'); }
@@ -87,8 +104,8 @@ final class ProviderLogin
             });
             RouterConnection::request('auth/cancel',['actor'=>$params['actor'],'id'=>$id]);
         }
-        $public = array_intersect_key($reply,array_flip(['id','provider','loginId','state','expiresAt','url','message']));
-        if (isset($reply['prompt']) && is_array($reply['prompt'])) { $public['prompt'] = array_intersect_key($reply['prompt'],array_flip(['id','message','secret','allowEmpty','placeholder'])); }
+        $public = array_intersect_key($reply,array_flip(['id','provider','loginId','state','expiresAt','url','message','automaticCallback']));
+        if (isset($reply['prompt']) && is_array($reply['prompt'])) { $public['prompt'] = array_intersect_key($reply['prompt'],array_flip(['id','message','secret','allowEmpty','placeholder','callback'])); }
         if ($state === 'pending') {
             foreach (['status','answer','cancel'] as $next) { $public['_links'][$next] = apiLink(self::BASE.'/'.$id.'/'.$next,'POST'); }
         }

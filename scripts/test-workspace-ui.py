@@ -429,6 +429,160 @@ def exercise_registration(browser, private_project):
         context.close()
 
 
+def exercise_provider_login(page):
+    """Only these API responses and issuer are synthetic. No real grants or outgoing issuer requests."""
+    context = page.context
+    path = "/ui-fixture/login"
+    issuer = "https://issuer.invalid"
+    starts, launches, answers, new_pages = [], [], [], []
+    approved = saved = challenge_ready = False
+    provider = None
+    polls = 0
+    held_suffix = ""
+    held = []
+
+    def link(suffix="", method="POST"):
+        return {"href": path + suffix, "method": method}
+
+    def runtime(route):
+        profile = {"id": "fixture", "label": "Fixture account", "configured": saved, "defaultModel": "fixture-model"}
+        if saved:
+            profile["authType"] = "login"
+        route.fulfill(json={"ai": {"defaultProvider": "fixture", "providers": [profile],
+                                   "_links": {"loginMethods": link(method="GET")}}})
+
+    def api(route):
+        nonlocal provider, polls, saved
+        req = route.request
+        suffix = urlsplit(req.url).path[len(path):]
+        if req.method == "GET":
+            return route.fulfill(json={"providers": [
+                {"id": "browser", "name": "Issuer", "available": True, "browser": True},
+                {"id": "key", "name": "API key", "available": True, "browser": False}],
+                "_links": {"startLogin": link()}})
+        assert req.method == "POST"
+        if not suffix:
+            provider = req.post_data_json["provider"]
+            starts.append(provider)
+        elif suffix == "/status":
+            polls += 1
+            if provider == "browser" and approved:
+                saved = True
+                return route.fulfill(json={"state": "completed", "provider": "fixture"})
+        elif suffix == "/answer":
+            assert not held, "Answer raced an in-flight status request"
+            answers.append(req.post_data_json)
+            return route.fulfill(json={"state": "completed", "provider": "fixture"})
+        elif suffix == "/cancel":
+            return route.fulfill(json={"state": "cancelled"})
+        else:
+            raise AssertionError(f"Unexpected sign-in request {suffix}")
+        state = {"state": "pending", "message": f"Device code TEST-42 · poll {polls}",
+                 "_links": {key: link("/" + key) for key in ("status", "answer", "cancel")}}
+        if provider == "browser" and challenge_ready:
+            state.update(url=issuer + "/consent", automaticCallback=True, message="After signing in, paste the full URL.",
+                         prompt={"id": "callback", "message": "Redirect URL", "callback": True, "secret": True})
+        elif provider == "key":
+            state["prompt"] = {"id": "key", "message": "Provider API key", "secret": True}
+        if suffix == held_suffix:
+            held.append((route, state))
+            return
+        route.fulfill(json=state)
+
+    def release_response():
+        nonlocal held_suffix
+        held_suffix = None
+        while held:
+            route, state = held.pop()
+            route.fulfill(json=state)
+
+    def consent(route):
+        nonlocal approved
+        if route.request.url == issuer + "/consent":
+            launches.append(route.request.url)
+            route.fulfill(content_type="text/html", body='<form action="/approve" method="post"><button>Approve</button></form>')
+        elif route.request.url == issuer + "/approve" and route.request.method == "POST":
+            approved = True
+            route.fulfill(content_type="text/plain", body="Approved")
+        else:
+            route.abort()
+
+    def record_page(opened):
+        new_pages.append(opened)
+
+    # Playwright's * cannot cross a slash. Match the collection and its
+    # transaction actions separately so polling never hits the real API.
+    login_routes = (base + path, base + path + "/**")
+    page.route(base + "/api/runtime", runtime)
+    for pattern in login_routes:
+        page.route(pattern, api)
+    context.route(issuer + "/**", consent)
+    context.on("page", record_page)
+    try:
+        page.get_by_role("button", name="Manage", exact=True).click()
+        page.locator("#manage-nav").get_by_role("button", name="Model settings & credentials").click()
+        panel = card(page.locator("#manage-body"), "Connect a provider")
+        connect = panel.get_by_role("button", name="Connect", exact=True)
+        with context.expect_page() as opened:
+            connect.click()
+        popup = opened.value
+        expect(popup).to_have_url("about:blank")
+        assert popup.evaluate("window.opener === null")
+        release_response()
+        expect(panel.get_by_role("status")).to_contain_text("Device code TEST-42")
+        challenge_ready = True
+        expect(popup.get_by_role("button", name="Approve")).to_be_visible()
+        assert popup.evaluate("window.opener === null")
+        expect(panel.get_by_role("status")).to_have_text("Finish signing in with the provider. Osiris will connect automatically.")
+        field = panel.get_by_label("Redirect URL", exact=True)
+        expect(field).to_be_hidden()
+        panel.get_by_text("Paste redirect URL instead", exact=True).click()
+        field.fill("partially pasted redirect URL")
+        original = field.element_handle()
+        with page.expect_request_finished(lambda req: req.url == base + path + "/status"):
+            pass  # The same pending prompt comes back even though the user has started typing.
+        assert original.evaluate("field => field.isConnected")
+        expect(field).to_have_value("partially pasted redirect URL")
+        account = card(page.locator("#manage-body"), "Fixture account")
+        expect(account).to_contain_text("Not configured.")
+        popup.get_by_role("button", name="Approve").click()
+        expect(account).to_contain_text("Signed in.")
+        expect(page.locator("#toast")).to_have_text("Connected Issuer.")
+        assert launches == [issuer + "/consent"] and starts == ["browser"] and not answers
+
+        panel.get_by_label("Sign-in method").select_option("key")
+        connect.click()
+        secret = panel.get_by_label("Provider API key", exact=True)
+        expect(secret).to_have_attribute("type", "password")
+        held_suffix = "/status"
+        with page.expect_request(lambda req: req.url == base + path + "/status"):
+            secret.fill("synthetic-key")
+        panel.get_by_role("button", name="Continue").click()
+        release_response()
+        expect(page.locator("#toast")).to_have_text("Connected API key.")
+        assert new_pages == [popup] and starts == ["browser", "key"]
+        assert answers == [{"promptId": "key", "answer": "synthetic-key"}]
+
+        # Leaving settings before start returns closes its reserved tab. When the
+        # server finally supplies a transaction, cancel it without launching the URL.
+        approved = False
+        held_suffix = ""
+        panel.get_by_label("Sign-in method").select_option("browser")
+        with context.expect_page() as abandoned:
+            connect.click()
+        with abandoned.value.expect_event("close"):
+            page.locator("#manage-nav").get_by_role("button", name="Sessions", exact=True).click()
+        with page.expect_response(lambda r: r.url == base + path + "/cancel"):
+            release_response()
+        assert launches == [issuer + "/consent"]
+    finally:
+        context.remove_listener("page", record_page)
+        context.unroute(issuer + "/**", consent)
+        for pattern in login_routes:
+            page.unroute(pattern, api)
+        page.unroute(base + "/api/runtime", runtime)
+
+
 def exercise(browser):
     context = browser.new_context()
     context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(base + "/") else route.abort())
@@ -545,6 +699,7 @@ def exercise(browser):
         resources.pop()
         expect(run_check("project-context", "Read project context", "Failed")).to_contain_text("HTTP 404")
         expect(page.locator('#project-context a[href="/errors/404/not_found"]')).to_be_visible()
+        exercise_provider_login(page)
     finally:
         cleanup(context, resources)
     # An expired session leads to its own recovery page instead of an opaque
@@ -589,4 +744,4 @@ with sync_playwright() as pw:
             context.close()
     finally:
         browser.close()
-print("PASS: Chromium registration, isolation, slash commands, model selection, per-thread permissions, inline consent, recovery, persistence and API checks")
+print("PASS: Chromium registration, isolation, slash commands, provider sign-in popup and key flows, model selection, per-thread permissions, inline consent, recovery, persistence and API checks")
