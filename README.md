@@ -26,6 +26,8 @@ Use `.\run.ps1 -Tools -Open` for the optional Adminer at <http://127.0.0.1:8083/
 
 Start a **New chat** and type `/` to see the commands. Keep typing to filter, use the arrow keys to navigate, or click a result. `/model` opens a searchable list grouped by provider: installed Ollama models and models your account's cloud keys can access. A provider that cannot be reached is marked unavailable. Selecting a model changes this thread without starting a model request.
 
+The composer shows the active provider and model even when the thread is idle.
+
 Commands report settings and errors outside the transcript. During a model call the terminal shows the selected model and elapsed time; tool calls and their results appear as they finish. The activity indicator does not display private model reasoning.
 
 `/goal <objective>` saves a goal for this account and thread and starts a turn if the agent is idle. An active goal also informs later main turns. `/goal` opens its controls; `/goal pause`, `/goal resume`, `/goal done` and `/goal clear` change its state. Pausing a goal does not cancel a request already in progress.

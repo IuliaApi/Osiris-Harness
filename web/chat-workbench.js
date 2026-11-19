@@ -50,7 +50,8 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     prompt.reset(null);
     desktop.reset();
     sides.reset();
-    choice = mode = null;
+    setModelChoice(null);
+    mode = null;
     permissionBusy = false;
     permissionError = '';
     permissions.hidden = true;
@@ -80,20 +81,27 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
     byId('tools-indicator').textContent = thread ? `tools ${tools ? 'on' : 'off'}` : '';
     hint.textContent = writable ? 'Enter runs · Shift+Enter adds a line · / for commands' : 'Commands only · /resume to open a thread · / for commands';
   }
+  function setModelChoice(value) {
+    choice = value;
+    const indicator = byId('thread-model');
+    indicator.hidden = !thread;
+    indicator.textContent = value ? `Model: ${value.provider}/${value.model}` : 'No model selected';
+  }
   function restoreComposer() {
     const options = state.runtime.ai.providers;
-    choice = modelChoice();
+    let restored = modelChoice();
     try {
       const saved = JSON.parse(localStorage.getItem(modelKey(thread.id)));
-      if (saved && options.some(item => item.id === saved.provider) && validModel(saved.model)) choice = saved;
+      if (saved && options.some(item => item.id === saved.provider) && validModel(saved.model)) restored = saved;
     } catch { /* An invalid browser preference must not prevent opening the thread. */ }
+    setModelChoice(restored);
     editor.value = getDraft(thread.id);
     tools = localStorage.getItem(toolsKey(thread.id)) !== 'off';
     prompt.reset(`${tabPrefix()}history:${thread.id}`);
     composerStatus();
   }
   function saveModel(provider, model) {
-    choice = {provider, model};
+    setModelChoice({provider, model});
     localStorage.setItem(modelKey(thread.id), JSON.stringify(choice));
   }
   editor.addEventListener('input', () => {

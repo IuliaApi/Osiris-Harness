@@ -156,8 +156,9 @@ let manager=null;
 function managePage(link,kind,label,parent=null){manager={link,kind,label,parent};return renderManage();}
 function labelFor(item){return item.name||item.title||item.path||item.username||item.userId||item.id||'Record';}
 function section(root,title,body){const node=el('section','resource-card');node.append(el('h3','chat-heading',title));if(body)node.append(el('p','item-meta',body));root.append(node);return node;}
-function formAction(root,label,fields,submit,initial={}){
-  const details=el('details','resource-card'),summary=el('summary','',label),form=el('form','fields');details.append(summary,form);root.append(details);
+function formAction(root,label,fields,submit,initial={},inline=false){
+  const panel=el(inline?'section':'details','resource-card'),form=el('form','fields');
+  panel.append(inline?el('h3','chat-heading',label):el('summary','',label),form);root.append(panel);
   const controls={};
   for(const [key,caption,type='text',optional=false] of fields){
     const wrap=el('label','',caption),choices=Array.isArray(type),input=el(choices?'select':type==='textarea'?'textarea':'input','input-os');
@@ -170,7 +171,7 @@ function formAction(root,label,fields,submit,initial={}){
   form.onsubmit=async e=>{
     e.preventDefault();if(save.disabled)return;save.disabled=true;error.textContent='';
     const payload={};for(const [key,input] of Object.entries(controls)){if(input.value!=='')payload[key]=input.value;}
-    try{await submit(payload);details.open=false;notify(label+' saved.');}
+    try{await submit(payload);if(!inline)panel.open=false;notify(label+' saved.');}
     catch(err){error.textContent=err.message;}finally{save.disabled=false;for(const input of Object.values(controls))if(input.type==='password')input.value='';}
   };
   return controls;
@@ -212,8 +213,8 @@ const createActions={
 function versionHeader(item){return Number.isInteger(item.version)?{'If-Match':`"${item.version}"`}:{};}
 function renderActions(root,item,kind,collection=false){
   const nav=el('div','actions');root.append(nav);
-  const action=(link,label,fields,initial={},map=x=>x)=>{
-    if(link)formAction(root,label,fields,async payload=>{await follow(link,map(payload),versionHeader(item));await renderManage();},initial);
+  const action=(link,label,fields,initial={},map=x=>x,inline=false)=>{
+    if(link)formAction(root,label,fields,async payload=>{await follow(link,map(payload),versionHeader(item));await renderManage();},initial,inline);
   };
   for(const [relName,child,label] of childPages){
     const link=rel(item,relName,'GET');
@@ -222,7 +223,7 @@ function renderActions(root,item,kind,collection=false){
   if(kind==='session'&&rel(item,'self','GET')&&!collection)nav.append(button('Open conversation',()=>openChat(item)));
   for(const [type,[name,label,fields]] of Object.entries(createActions)){
     const link=rel(item,name,'POST')||(collection&&kind===type?rel(item,'create','POST'):null);
-    action(link,label,fields,{},payload=>type==='message'?{role:'user',...payload}:payload);
+    action(link,label,fields,{},payload=>type==='message'?{role:'user',...payload}:payload,type==='project');
   }
   const tool=rel(item,'requestTool','POST')||(collection&&kind==='run'?rel(item,'create','POST'):null);
   if(tool){
