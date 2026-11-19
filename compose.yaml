@@ -7,6 +7,8 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgres://osiris_app@db:5432/${OSIRIS_DATABASE_NAME:-osiris_dev}
+      OSIRIS_AI_ROUTER: "1"
+      OSIRIS_AI_ROUTER_KEY_FILE: /run/osiris/router.key
       OSIRIS_DB_PASSWORD_FILE: /run/osiris/db.key
       OSIRIS_GITHUB_MODE: ${OSIRIS_GITHUB_MODE:-online}
       OSIRIS_VAULT_KEY_FILE: /run/osiris/vault.key
@@ -16,6 +18,12 @@ services:
       OSIRIS_OLLAMA_MODEL: ${OSIRIS_OLLAMA_MODEL:-llama3.2}
       OSIRIS_OLLAMA_ENABLED: ${OSIRIS_OLLAMA_ENABLED:-1}
     volumes:
+      - type: bind
+        source: ./.local/router.key
+        target: /run/osiris/router.key
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ./.local/vault.key
         target: /run/osiris/vault.key
@@ -33,6 +41,8 @@ services:
     ports:
       - "127.0.0.1:${OSIRIS_PORT:-8080}:8080"
     depends_on:
+      ai-router:
+        condition: service_healthy
       db:
         condition: service_healthy
     mem_limit: 128m
@@ -52,6 +62,39 @@ services:
       start_period: 3s
       timeout: 3s
       retries: 3
+  ai-router:
+    image: osiris-ai-router:dev
+    build:
+      context: .
+      dockerfile: ai-router/Dockerfile
+    environment:
+      OSIRIS_AI_ROUTER_KEY_FILE: /run/osiris/router.key
+    volumes:
+      - type: bind
+        source: ./.local/router.key
+        target: /run/osiris/router.key
+        read_only: true
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 100
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options: {max-size: "5m", max-file: "3"}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "process.exit((await fetch('http://127.0.0.1:8090/health')).ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
   adminer:
     profiles: [tools]
     image: adminer:5-standalone@sha256:e3a6b4942dd088a29cc8bbce22553429247c5c2b30b07d856ae49012b5c84a5b

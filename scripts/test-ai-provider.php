@@ -36,3 +36,6 @@ foreach ([[401,'ai_upstream_auth'], [403,'ai_upstream_auth'], [429,'ai_upstream_
     catch (ApiError $e) { must($e->codeName === $code && !str_contains($e->getMessage(),'private-upstream-fixture'), "Sanitized upstream error: $status"); }
 }
 must(AIProvider::extractOpenAI(['status'=>'completed','output'=>'bad']) === null, 'Malformed provider output is rejected');
+
+try { AIProvider::decodeResponse('router',503,json_encode(['code'=>'ai_upstream_quota'])); throw new RuntimeException('Router quota error accepted'); }
+catch (ApiError $e) { must($e->httpStatus === 503 && $e->codeName === 'ai_upstream_quota', 'Router exhausted-credit error is specific and safe'); }

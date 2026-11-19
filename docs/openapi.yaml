@@ -1516,6 +1516,7 @@ components:
           type: object
           required: [defaultProvider, providers, connected, note, _links]
           properties:
+            routing: {type: string, enum: [direct, oh-my-pi]}
             defaultProvider: {type: string, enum: [openai, anthropic, ollama]}
             providers: {type: array, items: {$ref: "#/components/schemas/Provider"}}
             connected: {type: boolean}

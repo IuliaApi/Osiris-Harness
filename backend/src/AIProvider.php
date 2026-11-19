@@ -48,6 +48,7 @@ final class AIProvider
         foreach ($providers as $p) { if ($p['configured']) { $default = $p['id']; break; } }
         return [
             'defaultProvider' => $default,
+            'routing' => getenv('OSIRIS_AI_ROUTER') === '1' ? 'oh-my-pi' : 'direct',
             'providers' => $providers,
             'connected' => false,
             'note' => 'Select a provider in Settings. Keys remain on the server; responses are never simulated.',
@@ -90,6 +91,19 @@ final class AIProvider
         }
         $messages[] = ['role' => 'user', 'content' => $prompt];
 
+        if (getenv('OSIRIS_AI_ROUTER') === '1') {
+            $token = trim((string) @file_get_contents(getenv('OSIRIS_AI_ROUTER_KEY_FILE') ?: '/run/osiris/router.key'));
+            if (!preg_match('~\A[A-Za-z0-9+/]{43}=\z~D', $token)) {
+                throw new ApiError(503, 'AI router authentication unavailable', 'ai_not_configured');
+            }
+            $answer = self::request('http://ai-router:8090/chat', ['Authorization: Bearer ' . $token],
+                ['provider' => $provider, 'model' => $model, 'apiKey' => $key, 'system' => $system, 'messages' => $messages], 'router');
+            if (($answer['provider'] ?? null) !== $provider || ($answer['model'] ?? null) !== $model || !is_string($answer['text'] ?? null) || trim($answer['text']) === '' || !isRepresentableText($answer['text']) || utf8Length($answer['text']) > 10000) {
+                throw new ApiError(502, 'AI router returned no usable text answer', 'ai_upstream_failure');
+            }
+            return ['provider' => $provider, 'model' => $model, 'text' => $answer['text']];
+        }
+
         if ($provider === 'openai') {
             $url = 'https://api.openai.com/v1/responses';
             $headers = ['Authorization: Bearer ' . $key];
@@ -130,7 +144,7 @@ final class AIProvider
         $raw = '';
         curl_setopt_array($client, [
             CURLOPT_POST => true, CURLOPT_POSTFIELDS => $json, CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS => $provider === 'ollama' ? CURLPROTO_HTTP : CURLPROTO_HTTPS,
+            CURLOPT_PROTOCOLS => in_array($provider, ['ollama','router'], true) ? CURLPROTO_HTTP : CURLPROTO_HTTPS,
             CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => self::REQUEST_TIMEOUT,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', ...$headers],
             CURLOPT_USERAGENT => 'Osiris-Harness/3',
@@ -153,6 +167,13 @@ final class AIProvider
 
     public static function decodeResponse(string $provider, int $code, string $raw): array
     {
+        if ($provider === 'router' && $code !== 200) {
+            $failure = json_decode($raw, true);
+            if (($failure['code'] ?? null) === 'ai_upstream_quota') { throw new ApiError(503, 'Your provider reports exhausted API credit or quota. Check API billing for the project that owns this key.', 'ai_upstream_quota'); }
+            if (($failure['code'] ?? null) === 'ai_upstream_auth') { throw new ApiError(502, 'The provider rejected your API key. Update it in API key settings.', 'ai_upstream_auth'); }
+            if (($failure['code'] ?? null) === 'ai_upstream_rate_limit') { throw new ApiError(503, 'The provider is rate-limited or out of quota', 'ai_upstream_rate_limit'); }
+        }
+        if ($provider === 'router' && $code === 504) { throw new ApiError(504, 'AI request timed out. No chat messages were saved.', 'ai_upstream_timeout'); }
         if ($code === 401 || $code === 403) { throw new ApiError(502, "The $provider credentials were rejected", 'ai_upstream_auth'); }
         if ($code === 429) { throw new ApiError(503, "The $provider provider is rate-limited or out of quota", 'ai_upstream_rate_limit'); }
         if ($code !== 200) { throw new ApiError(502, "$provider request failed (HTTP $code). Verify model availability.", 'ai_upstream_failure'); }

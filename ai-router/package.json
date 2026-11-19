@@ -1,0 +1,1 @@
+{"name":"osiris-ai-router","private":true,"type":"module","scripts":{"test":"bun test"},"dependencies":{"@oh-my-pi/pi-ai":"19.0.0","@oh-my-pi/pi-catalog":"19.0.0"}}

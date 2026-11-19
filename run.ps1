@@ -17,7 +17,7 @@ Push-Location -LiteralPath $PSScriptRoot
 try {
     $keyDirectory = Join-Path $PSScriptRoot '.local'
     $null = [IO.Directory]::CreateDirectory($keyDirectory)
-    foreach ($filename in 'vault.key','db.key') {
+    foreach ($filename in 'vault.key','db.key','router.key') {
         $keyPath = Join-Path $keyDirectory $filename
         if (Test-Path -LiteralPath $keyPath -PathType Leaf) { continue }
         $bytes = New-Object byte[] 32

@@ -103,40 +103,67 @@ async function loadSessions(link){const data=await follow(link||listLink());appS
   const p=data.page;$('page-info').textContent=`${p.total} sessions · ${p.total?p.offset+1:0}–${Math.min(p.offset+data.items.length,p.total)}`;$('previous-page').disabled=!rel(data,'previous','GET');$('next-page').disabled=!rel(data,'next','GET');
 }
 function button(label,fn){const b=el('button','btn-os',label);b.type='button';b.onclick=async()=>{b.disabled=true;try{await fn();}catch(e){notify(e.message);}finally{b.disabled=false;}};return b;}
+const chatUI={load:0,drafts:new Map(),failed:null};
+function resizeComposer(save=true){const box=$('message-text');box.style.height='auto';box.style.height=Math.min(190,Math.max(72,box.scrollHeight))+'px';$('message-count').textContent=box.value.length.toLocaleString()+' / 6,000';if(save&&appState.current)chatUI.drafts.set(appState.current.id,box.value);$('send-message').disabled=box.disabled||!box.value.trim();}
 function renderChatSessions(){
   const root=$('chat-session-list');root.replaceChildren();
-  for(const s of appState.sessions){
-    const b=button(s.title,()=>selectSession(s));b.className='chat-session'+(appState.current?.id===s.id?' selected':'');b.append(el('small','truncate',projectName(s.projectId)));root.append(b);
-  }
+  for(const s of appState.sessions){const b=button(s.title,()=>selectSession(s));b.className='chat-session'+(appState.current?.id===s.id?' selected':'');b.disabled=appState.sending;if(appState.current?.id===s.id)b.setAttribute('aria-current','true');b.append(el('small','truncate',projectName(s.projectId)));root.append(b);}
   if(!appState.sessions.length)empty('chat-session-list','No sessions available.');
 }
-async function openChat(s){appState.current=s;return go('/chat');}
-async function selectSession(s){appState.current=s;renderChatSessions();await loadChat();}
-function messageNode(m){const block=el('article','message '+(m.role==='user'?'user':'assistant'));block.append(el('div','message-label',m.role),el('div','message-text',m.content));return block;}
-async function loadChat(){
-  const s=appState.current,box=$('chat-history');
-  appState.detail=null;for(const id of ['archive-session','delete-session','chat-form'])visible($(id),false);
-  $('chat-title').textContent=s?.title||'Select a session';$('chat-project').textContent='';$('chat-status').textContent='—';empty('chat-history',s?'Loading conversation…':'Choose a session to open its conversation.');
-  if(!s)return;
-  const d=await follow(queryLink(rel(s,'self','GET'),{include:'project,messages'}));
-  if(d.messagesPage?.hasMore){
-    const latest=await follow(queryLink(rel(d,'messages','GET'),{sort:'createdAt',order:'desc',limit:25}));
-    d.messages=latest.items.reverse();
-  }
-  if(appState.current!==s)return;
-  appState.detail=d;$('chat-title').textContent=d.title;$('chat-project').textContent=d.project?.name||projectName(d.projectId);$('chat-status').textContent=d.status;
-  visible($('archive-session'),d.status==='active'&&rel(d,'update','PATCH'));visible($('delete-session'),rel(d,'delete','DELETE'));visible($('chat-form'),d.status==='active'&&rel(d,'chat','POST'));
-  $('message-text').disabled=appState.sending;$('send-message').disabled=appState.sending;$('chat-hint').textContent='Provider and model are selected in Manage.';
-  box.replaceChildren();
-  if(d.messagesPage?.hasMore)box.append(el('p','hint','Showing the latest 25 messages. Open Manage → Sessions → Messages for earlier pages.'));
-  if(!d.messages?.length)empty('chat-history','No messages yet.');else for(const m of d.messages)box.append(messageNode(m));box.scrollTop=box.scrollHeight;
+async function openChat(s){if(appState.sending){notify('Wait for this reply before changing sessions.');return;}appState.current=s;return go('/chat');}
+async function selectSession(s){if(appState.sending)return;appState.current=s;renderChatSessions();await loadChat();}
+function copyButton(content){const b=el('button','subtle-link message-copy','Copy');b.type='button';b.setAttribute('aria-label','Copy response');b.onclick=async()=>{try{await navigator.clipboard.writeText(content);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1800);}catch{notify('Copy unavailable. Select the text to copy it.');}};return b;}
+function messageNode(m){const block=el('article','message '+(m.role==='user'?'user':'assistant'));const label=el('div','message-label',m.role==='user'?'You':m.role==='assistant'?'Osiris':m.role);if(m.role==='assistant')label.append(copyButton(m.content));block.append(label);const body=el('div','message-text');
+  // Build code blocks with text nodes so model output is never interpreted as HTML.
+  const parts=String(m.content||'').split(/```[^\n`]*\n([\s\S]*?)```/g);parts.forEach((part,i)=>{if(i%2){const pre=el('pre');pre.append(el('code','',part.replace(/\n$/,'')));body.append(pre);}else body.append(document.createTextNode(part));});block.append(body);return block;}
+function chatWelcome(active){const welcome=el('div','chat-welcome');welcome.append(el('h3','','What are we working on?'),el('p','','Ask a question, work through a bug, or plan your next change.'));if(active){const grid=el('div','starter-grid');for(const [title,prompt] of [['Debug a problem','Help me debug this issue. Here is what I expected and what happened: '],['Explain some code','Explain what this code does, step by step: '],['Plan a change','Help me break this feature into small implementation steps: ']]){const b=el('button','btn-os',title+' ↗');b.type='button';b.onclick=()=>{$('message-text').value=prompt;resizeComposer();$('message-text').focus();};grid.append(b);}welcome.append(grid);}return welcome;}
+function renderChatModel(){
+  const providers=appState.runtime?.ai?.providers||[],choice=modelChoice();
+  $('chat-provider').replaceChildren();for(const p of providers){const option=el('option','',p.label);option.value=p.id;$('chat-provider').append(option);}
+  if(choice){$('chat-provider').value=choice.provider;$('chat-model').value=choice.model;}
+  const provider=providers.find(p=>p.id===choice?.provider);
+  $('chat-provider-state').textContent=provider?.configured?(provider.id==='ollama'?'Local service checked on send':'Your API key is saved'):'Add your API key to connect';
 }
-async function sendChat(event){
-  event.preventDefault();const d=appState.detail,text=$('message-text').value.trim();if(!text||appState.sending)return;
-  const settings=modelChoice();if(!settings)throw Error('No provider available. Check Manage → Model settings.');
-  appState.sending=true;$('send-message').disabled=true;$('message-text').disabled=true;$('chat-hint').textContent='Waiting for provider…';
-  try{await follow(rel(d,'chat','POST'),{message:text,...settings});$('message-text').value='';}
-  finally{appState.sending=false;await loadChat();}
+function updateComposer(){
+  const d=appState.detail,active=d?.status==='active'&&rel(d,'chat','POST');
+  $('message-text').disabled=!active||appState.sending;$('send-message').textContent=appState.sending?'Waiting…':'Send message';
+  for(const id of ['archive-session','delete-session','chat-provider','chat-model'])$(id).disabled=appState.sending;
+  $('chat-hint').textContent=appState.sending?'Waiting for a response…':active?'Enter to send · Shift+Enter for a new line':'Choose a writable active session to chat.';resizeComposer(false);
+}
+async function loadChat(force=false){
+  if(appState.sending&&!force)return;
+  const s=appState.current,box=$('chat-history'),version=++chatUI.load;chatUI.failed=null;
+  appState.detail=null;for(const id of ['archive-session','delete-session','chat-form'])visible($(id),false);
+  renderChatModel();updateComposer();$('chat-title').textContent=s?.title||'Select a session';$('chat-project').textContent='';$('chat-status').textContent='—';empty('chat-history',s?'Loading conversation…':'Choose a session to open its conversation.');
+  if(!s)return;
+  try{
+    const d=await follow(queryLink(rel(s,'self','GET'),{include:'project,messages'}));
+    if(d.messagesPage?.hasMore){const latest=await follow(queryLink(rel(d,'messages','GET'),{sort:'createdAt',order:'desc',limit:25}));d.messages=latest.items.reverse();}
+    if(appState.current!==s||version!==chatUI.load)return;
+    appState.detail=d;$('chat-title').textContent=d.title;$('chat-project').textContent=d.project?.name||projectName(d.projectId);$('chat-status').textContent=d.status;
+    visible($('archive-session'),d.status==='active'&&rel(d,'update','PATCH'));visible($('delete-session'),rel(d,'delete','DELETE'));visible($('chat-form'),d.status==='active'&&rel(d,'chat','POST'));
+    $('message-text').value=chatUI.drafts.get(s.id)||'';updateComposer();box.replaceChildren();
+    if(d.messagesPage?.hasMore)box.append(el('p','hint','Showing the latest 25 messages. Open Manage → Sessions → Messages for earlier pages.'));
+    if(!d.messages?.length)box.append(chatWelcome(d.status==='active'&&rel(d,'chat','POST')));else for(const m of d.messages)box.append(messageNode(m));box.scrollTop=d.messages?.length?box.scrollHeight:0;
+  }catch(e){if(appState.current!==s||version!==chatUI.load)return;empty('chat-history',e.message);box.append(button('Reload conversation',()=>loadChat()));}
+}
+async function sendChat(event,retryText){
+  event.preventDefault();const d=appState.detail,text=(retryText??$('message-text').value).trim();if(!text||appState.sending||!rel(d,'chat','POST'))return;
+  const settings=modelChoice();if(!settings)throw Error('Choose a provider in API key settings.');
+  if(!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}$/.test(settings.model))throw Error('Enter a valid model identifier.');
+  const provider=appState.runtime.ai.providers.find(p=>p.id===settings.provider);
+  if(!provider?.configured){notify('Add your '+provider?.label+' API key in API key settings first.');return;}
+  const session=appState.current,box=$('message-text'),historyBox=$('chat-history');appState.sending=true;box.value='';chatUI.drafts.delete(session.id);updateComposer();renderChatSessions();
+  if(chatUI.failed){chatUI.failed.user.remove();chatUI.failed.error.remove();chatUI.failed=null;}
+  if(historyBox.querySelector('.chat-welcome,.empty'))historyBox.replaceChildren();const user=messageNode({role:'user',content:text});historyBox.append(user);
+  const pending=el('article','message assistant');pending.append(el('div','message-label','Osiris'));const status=el('div','thinking-row');status.setAttribute('role','status');const dots=el('span','thinking-dots');dots.setAttribute('aria-hidden','true');for(let i=0;i<3;i++)dots.append(el('span'));const waiting=el('span','','Waiting for a response…');status.append(dots,waiting);pending.append(status);historyBox.append(pending);historyBox.scrollTop=historyBox.scrollHeight;
+  const slow=setTimeout(()=>waiting.textContent='Still waiting — some replies take a little longer.',12000);
+  try{
+    const result=await follow(rel(d,'chat','POST'),{message:text,...settings});if(appState.current!==session)return;
+    pending.remove();user.replaceWith(messageNode(result.userMessage));historyBox.append(messageNode(result.assistantMessage));box.value='';chatUI.drafts.delete(session.id);historyBox.scrollTop=historyBox.scrollHeight;
+  }catch(e){
+    if(appState.current!==session)return;pending.remove();const error=el('article','message error');error.setAttribute('role','alert');error.append(el('div','message-label','Could not get a reply'),el('div','message-text',e.message),el('p','hint','Your message is kept above. Try again to resend it, or write a new message.'),button('Try again',()=>{if(!appState.sending)return sendChat({preventDefault(){}},text);}));historyBox.append(error);chatUI.failed={user,error};historyBox.scrollTop=historyBox.scrollHeight;
+  }finally{clearTimeout(slow);pending.remove();appState.sending=false;updateComposer();renderChatSessions();if(appState.route==='/chat'&&!box.disabled)box.focus();}
 }
 function showModal(id){$(id).classList.add('fallback-open');$(id).setAttribute('aria-hidden','false');$(id).querySelector('input').focus();}
 function hideModal(id){$(id).classList.remove('fallback-open');$(id).setAttribute('aria-hidden','true');}
@@ -186,7 +213,7 @@ function modelChoice(){
   const ai=appState.runtime?.ai;if(!ai)return null;
   let pref;try{pref=JSON.parse(localStorage.getItem('osiris:model:'+appState.userId));}catch{}
   if(pref&&ai.providers.some(p=>p.id===pref.provider)&&typeof pref.model==='string'&&pref.model)return {provider:pref.provider,model:pref.model};
-  const provider=ai.providers.find(p=>p.id===ai.defaultProvider)||ai.providers[0];
+  const provider=ai.providers.find(p=>p.configured&&p.id!=='ollama')||ai.providers.find(p=>p.id==='openai')||ai.providers[0];
   return provider?{provider:provider.id,model:provider.defaultModel}:null;
 }
 function renderSettings(body,runtime){
@@ -303,7 +330,12 @@ async function init(){
   bind('logout','click',async()=>{await follow(rel(appState.root,'logout','POST'));location.replace('/login');});
   bind('filter-form','submit',e=>{e.preventDefault();return loadSessions();});
   for(const [id,key] of [['previous-page','previous'],['next-page','next']])bind(id,'click',()=>loadSessions(appState.links[key]));
-  bind('chat-form','submit',sendChat);bind('message-text','keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!$('send-message').disabled)$('chat-form').requestSubmit();}});
+  bind('message-text','input',()=>resizeComposer());
+  bind('chat-settings','click',()=>{manager={link:rel(appState.root,'runtime','GET'),kind:'settings',label:'Model settings & credentials'};return go('/manage');});
+  const saveChatModel=()=>{const prefs={provider:$('chat-provider').value,model:$('chat-model').value.trim()};localStorage.setItem('osiris:model:'+appState.userId,JSON.stringify(prefs));renderChatModel();};
+  bind('chat-provider','change',()=>{$('chat-model').value=appState.runtime.ai.providers.find(p=>p.id===$('chat-provider').value).defaultModel;saveChatModel();});
+  bind('chat-model','change',saveChatModel);
+  bind('chat-form','submit',sendChat);bind('message-text','keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!$('send-message').disabled)$('chat-form').requestSubmit();}});
   bind('session-form','submit',createSession);bind('project-form','submit',createProject);bind('archive-session','click',archiveSession);bind('refresh-sessions','click',renderRoute);
   window.addEventListener('popstate',renderRoute);
   window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
