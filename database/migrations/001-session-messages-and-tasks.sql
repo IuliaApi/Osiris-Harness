@@ -1,4 +1,3 @@
--- Idempotent, additive Build 2 migration. Run against every existing local Osiris database.
 BEGIN;
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -21,6 +20,7 @@ CREATE INDEX IF NOT EXISTS messages_session_created_idx ON messages(session_id, 
 CREATE INDEX IF NOT EXISTS tasks_session_created_idx ON tasks(session_id, created_at, id);
 CREATE INDEX IF NOT EXISTS sessions_created_id_idx ON sessions(created_at, id);
 CREATE INDEX IF NOT EXISTS sessions_project_created_idx ON sessions(project_id, created_at, id);
-COMMENT ON TABLE messages IS 'AI harness conversation turns; live chat via optional external model, no local shell execution.';
-COMMENT ON TABLE tasks IS 'AI harness task lifecycle metadata; updates are manual API operations, not autonomous execution.';
+COMMENT ON TABLE sessions IS 'Coding sessions belonging to projects; each session has its own messages and tasks.';
+COMMENT ON TABLE messages IS 'Conversation turns in a coding session.';
+COMMENT ON TABLE tasks IS 'Tasks tracked within a coding session.';
 COMMIT;

@@ -1,4 +1,6 @@
-# Build 2 implementation and handoff
+# Resource workflows: implementation and handoff
+
+Archived coursework from the introduction of session writes and related resources. Paths and examples below describe that implementation and the dated extensions. See the [current API contract](../openapi.yaml) for authorization and media types today.
 
 ## What changed
 
@@ -95,11 +97,11 @@ GitHub request path is constructed from an **allowlisted HTTPS `github.com/{owne
 
 Proposed roles: `viewer` (read public projects only), `member` (read/write projects and sessions owned by their account), `owner` (delete/manage project members), `admin` (local administrative actions, not arbitrary cross-tenant access). Existing `projects.user_id` is the starting ownership field; session/message/task ownership derives from the project. **None of these checks is enforced in Build 2**, so all endpoints should be treated as development-only/private and bound to loopback. Build 3 will add login with salted password hashing, server-side sessions stored securely (HttpOnly, SameSite cookies with CSRF protection), role/ownership middleware, protected routes and negative authorization tests. If external API clients are required, issue scoped expiring access tokens, not permanent tokens in browser storage.
 
-**Specific Build 3 backlog:** authentication and ownership authorization; project membership/visibility and audited privileged writes; model-provider execution with managed secrets and explicit tool approvals; task state transitions/concurrency; release-grade logging and rate limiting; CI-backed Docker/PostgreSQL integration runs; operational error review and XML/YAML schema validation using real clients. No item is considered complete merely by appearing in OpenAPI: see the implementation evidence and unresolved runtime checks in `docs/build-2-board.md` and `build-manifest.json`.
+**Specific Build 3 backlog:** authentication and ownership authorization; project membership/visibility and audited privileged writes; model-provider execution with managed secrets and explicit tool approvals; task concurrency/state machine, release-grade logging and rate limiting; CI-backed Docker/PostgreSQL integration runs; operational error review and XML/YAML schema validation using real clients. See the [coverage board](resource-workflow-coverage.md) and [manifest](resource-workflow-manifest.json) for what had and had not been verified.
 
 ### Release packet additions
 
-The accompanying [Build 2 release packet](release-packet.md) maps the shared course delivery list to files, commands, test evidence, limitations, reviewer sign-off and **unverified** teacher access / remote tag / LEA submission. The [demonstration worksheet](demo-evidence.md) covers all six requested scenarios with fields for actual test outcomes, request IDs and network success. `build-manifest.json` uses numbered B2 tasks and B3 tickets; it is not a claim that all runtime checks passed. The Postman collection now includes an isolated eleven-step write/read/delete workflow and intentional `415`/`422` errors. The simple browser can also update a project's public repository URL and delete individual message/task children before deleting the session.
+The [delivery checklist](resource-workflow-delivery.md) maps the shared course delivery list to files, commands, test evidence, limitations, reviewer sign-off and **unverified** teacher access / remote tag / LEA submission. The [demonstration worksheet](resource-workflow-worksheet.md) covers all six requested scenarios with fields for actual test outcomes, request IDs and network success. The [manifest](resource-workflow-manifest.json) uses numbered B2 tasks and B3 tickets; it is not a claim that all runtime checks passed. The Postman collection included an isolated eleven-step write/read/delete workflow and intentional `415`/`422` errors. The simple browser could also update a project's public repository URL and delete individual message/task children before deleting the session.
 
 
 ## Post-deadline developer-workspace extension (November 5, 2026)

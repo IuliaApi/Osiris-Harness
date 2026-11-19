@@ -1,4 +1,6 @@
-# Build 2 rubric board / demonstration evidence
+# Resource workflows: coverage and backlog
+
+Archived coursework. Implementation paths and verification statuses in the table refer to the November 2026 resource-workflow snapshot.
 
 Status key: **implemented** = source code exists; **locally checked** = check executed in this editing environment; **runtime verification pending** = needs Docker/PostgreSQL live run. Never interpret source presence as proof that a network/database end-to-end test passed.
 
@@ -22,6 +24,6 @@ Status key: **implemented** = source code exists; **locally checked** = check ex
 - B3-05: Automated PostgreSQL integration checks in CI plus XML/YAML parser interoperability checks.
 - B3-06: Rate limits, audit trail, retention, structured log sink and credential redaction.
 
-The October 29, 2026 course deadline preceded this November 4 follow-up. The project still needs a live demonstration on a Docker-capable developer machine. See `docs/demo-evidence.md` for unfilled result fields; **pending is not pass**. The course states 23% implementation across three builds, not a separate Build 2 mark.
+The October 29, 2026 course deadline preceded this November 4 follow-up. A live demonstration on a Docker-capable developer machine was still outstanding. The [worksheet](resource-workflow-worksheet.md) retains the unfilled result fields. The course stated 23% implementation across three builds, not a separate Build 2 mark.
 
 **November 5 UI/AI extension:** modern dark dashboard, terminal-style JavaScript client, AI Settings (OpenAI/Anthropic/Ollama selection), PostgreSQL-backed chat route and PHP CLI are **implemented**. Local PHP lint, parser tests and no-DB HTTP checks passed. Real model API connections and live PostgreSQL chat tests remain **unverified**. No tool execution or internal reasoning display is included.

@@ -53,32 +53,41 @@ try:
     assert status == 200 and '<title>Osiris' in body and 'text/html' in headers['Content-Type']
     print('PASS public browser route returns HTML without PostgreSQL')
 
-    status, headers, body = http('/api/runtime')
-    runtime = json.loads(body)
-    assert status == 200 and runtime['capabilities']['shell_execution'] is False
-    assert {p['id'] for p in runtime['ai']['providers']} == {'openai', 'anthropic', 'ollama'}
-    assert runtime['ai']['connected'] is False
-    assert 'sk-test-secret-do-not-show' not in body
-    print('PASS runtime provider inventory without PostgreSQL; no secret disclosed')
-
-    status, headers, body = http('/sessions/ses_101/chat', method='GET')
-    assert status == 405 and headers['Allow'] == 'POST'
-    print('PASS chat route only allows POST (before database access)')
+    for path, method in [('/api/runtime','GET'), ('/api','GET'), ('/auth/me','GET'),
+                         ('/sessions/ses_101/chat','GET'), ('/sessions','POST')]:
+        status, headers, body = http(path, method=method)
+        error = json.loads(body)
+        assert status == 401 and error['code'] == 'unauthorized' and error['requestId'] == ids[-1]
+    print('PASS private routes reject anonymous callers before accessing PostgreSQL')
 
     status, headers, body = http('/not-a-route')
     item = json.loads(body)
     assert status == 404 and item['code'] == 'not_found' and item['requestId'] == ids[-1]
     print('PASS 404 structured JSON error and correlated request ID')
 
+    status, headers, body = http('/dashboard/no-such-page', accept='text/html')
+    assert status == 404 and 'text/html' in headers['Content-Type']
+    assert 'Page not found' in body and 'href="/dashboard"' in body
+    status, headers, body = http('/dashboard/no-such-page')
+    assert status == 404 and json.loads(body)['code'] == 'not_found'
+    print('PASS unknown browser pages show a 404 page; API clients receive JSON')
+
     status, headers, body = http('/sessions', accept='image/png')
     item = json.loads(body)
     assert status == 406 and item['code'] == 'not_acceptable' and item['requestId'] == ids[-1]
     print('PASS unsupported Accept gives 406 without leaking warnings or DB errors')
 
-    status, headers, body = http('/sessions/ses_101', method='POST')
-    item = json.loads(body)
-    assert status == 405 and headers['Allow'] == 'GET, PATCH, DELETE' and item['requestId'] == ids[-1]
-    print('PASS unsupported route method gives 405 with Allow and correlated error')
+    for path, method in [('/not-a-route', 'GET'), ('/sessions', 'DELETE')]:
+        status, headers, body = http(path, method=method, accept='image/png')
+        item = json.loads(body)
+        assert status == 406 and item['code'] == 'not_acceptable' and item['requestId'] == ids[-1]
+    print('PASS unsupported Accept on routing and method errors returns structured 406')
+
+    status, headers, body = http('/auth/login', method='GET')
+    assert status == 405 and headers['Allow'] == 'POST' and json.loads(body)['requestId'] == ids[-1]
+    status, headers, body = http('/auth/login?unexpected=1', method='POST')
+    assert status == 400 and json.loads(body)['requestId'] == ids[-1]
+    print('PASS public authentication method/query errors are correlated without PostgreSQL')
 finally:
     process.terminate()
     try:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional cross-format data consistency check; requires PHP CLI and `pip install PyYAML`."""
+"""Cross-format round trip with independent parsers. Requires PHP+DOM, backend/vendor and PyYAML."""
 import json
 from pathlib import Path
 import subprocess
@@ -14,7 +14,7 @@ except ImportError as error:
 ROOT = Path(__file__).resolve().parent
 
 def representation(media):
-    return subprocess.check_output(['php', str(ROOT / 'representation-fixture.php'), media], text=True)
+    return subprocess.check_output(['php', str(ROOT / 'representation-fixture.php'), media], encoding='utf-8')
 
 
 def xml_to_data(node):
@@ -35,10 +35,20 @@ def xml_to_data(node):
         return float(scalar)
     return scalar
 
-expected = json.loads(representation('application/json'))
-from_yaml = yaml.safe_load(representation('application/yaml'))
-from_xml = xml_to_data(ET.fromstring(representation('application/xml')))
-assert expected == from_yaml, f'YAML differs: {from_yaml!r}'
-assert expected == from_xml, f'XML differs: {from_xml!r}'
-assert expected['empty'] == [] and expected['session']['nullable'] is None
-print('PASS JSON, XML and YAML parse to the same nested values, lists, nulls, booleans and numbers')
+json_text = representation('application/json')
+expected = json.loads(json_text)
+yaml_text = representation('application/yaml')
+assert yaml.safe_load(yaml_text) == expected
+xml_root = ET.fromstring(representation('application/xml'))
+assert xml_root.tag == 'response' and xml_to_data(xml_root) == expected
+assert expected['empty'] == [] and expected['emptyMap'] == {} and expected['session']['nullable'] is None
+assert expected['_links']['update'] == {'href': '/sessions/ses_fixture', 'method': 'PATCH'}
+
+# Input uses the same fields/types, with request instead of response as the XML root.
+xml_root.tag = 'request'
+for media, body in [('application/json', json_text), ('text/xml', ET.tostring(xml_root, encoding='unicode')),
+                    ('text/yaml', yaml_text)]:
+    result = subprocess.check_output(['php', str(ROOT / 'representation-fixture.php'), 'decode', media],
+                                     input=body, encoding='utf-8')
+    assert json.loads(result) == expected, media
+print('PASS JSON/XML/YAML input and output preserve lists, maps, scalars and method-aware links')

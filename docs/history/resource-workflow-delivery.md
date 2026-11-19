@@ -1,4 +1,6 @@
-# Build 2 release packet — honest submission record
+# Resource workflows: delivery checklist
+
+Archived coursework. This is the checklist as prepared for the resource-workflow snapshot. Its commands, security limits, paths and submission status do not apply to the current checkout.
 
 > **Submission status: NOT VERIFIED.** This package was prepared as a later review of the October 29, 2026 Build 2 requirements. It does not demonstrate an on-time submission. Do not mark any unchecked item as completed without actual evidence. A Git push alone does not establish LEA submission.
 
@@ -14,11 +16,11 @@ Evidence to attach after team action: GitHub commit page/permalink, exact full S
 
 ## 2. Build manifest
 
-See [`../build-manifest.json`](../build-manifest.json) for planned B2-01…B2-12 IDs, implementation vs verification status, changes from Build 1, and explicit B3-01…B3-06 tickets. Record actual contributor and reviewer names in the manifest; placeholders are not evidence of review.
+See the [archived manifest](resource-workflow-manifest.json) for planned B2-01…B2-12 IDs, implementation vs verification status, changes from Build 1, and explicit B3-01…B3-06 tickets. Record actual contributor and reviewer names in the manifest; placeholders are not evidence of review.
 
 ## 3. Reproduction / safe configuration
 
-- Runtime images in [`../backend/Dockerfile`](../backend/Dockerfile) and [`../compose.yaml`](../compose.yaml): **PHP 8.4 CLI Alpine** with `pdo_pgsql`, **PostgreSQL 16 Alpine**, optional **Adminer 5**. Requires **Docker Engine/Desktop with Compose v2** and **PowerShell 7** (`pwsh`) for the scripted launch/tests. Host PHP 8.4 is optional for standalone helper tests.
+- Runtime images in the snapshot's `backend/Dockerfile` and `compose.yaml`: **PHP 8.4 CLI Alpine** with `pdo_pgsql`, **PostgreSQL 16 Alpine**, optional **Adminer 5**. Requires **Docker Engine/Desktop with Compose v2** and **PowerShell 7** (`pwsh`) for the scripted launch/tests. Host PHP 8.4 is optional for standalone helper tests.
 - Repository-local config keys: `OSIRIS_DATABASE_NAME`, `OSIRIS_PORT` (from `.env.example`) and `OSIRIS_GITHUB_MODE` (`online` / controlled `offline` failure mode). The `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are optional and must remain private; `OSIRIS_OLLAMA_ENABLED` and per-provider model IDs are optional. `DATABASE_URL` is provided **inside the container** by Compose. Credentials are **local demo-only** and not suitable for remote hosting.
 - `./run.ps1`: starts DB, applies additive `database/build2.sql` to an existing Build 1 local database and preserves existing rows; loads canonical demo fixtures if absent, then starts API on `http://127.0.0.1:8080`.
 - `./run.ps1 -EmptyDemo -Port 8081`: isolated empty fixture, no destructive reset.
@@ -28,9 +30,9 @@ See [`../build-manifest.json`](../build-manifest.json) for planned B2-01…B2-12
 
 ## 4. Contract and saved requests
 
-- OpenAPI: [`openapi.yaml`](openapi.yaml) — document only implemented routes; original item/list 200/404/empty behavior retained and tagged in implementation notes.
-- Postman: [`../requests/Osiris.local.postman_collection.json`](../requests/Osiris.local.postman_collection.json). The two `baseUrl` values are `http://127.0.0.1:8080` and `http://127.0.0.1:8081`. Stored writes modify your local DB; run write demos on disposable fixtures.
-- Implemented output formats for item/collection/composite GET: `application/json`, `application/xml`, `application/yaml`. Write bodies: `application/json` only. `406` for unsupported `Accept`; `415` for unsupported `Content-Type`; `DELETE` success returns `204` with no body. See [matrix](build-2.md#representation--negotiation-matrix).
+- OpenAPI: the snapshot's `docs/openapi.yaml` documented the original item/list 200/404/empty behavior.
+- Postman: the snapshot's `requests/Osiris.local.postman_collection.json` used `http://127.0.0.1:8080` and `http://127.0.0.1:8081`. Stored writes modified the local DB.
+- Implemented output formats for item/collection/composite GET: `application/json`, `application/xml`, `application/yaml`. Write bodies: `application/json` only. `406` for unsupported `Accept`; `415` for unsupported `Content-Type`; `DELETE` success returns `204` with no body. See the [archived matrix](resource-workflows.md#representation--negotiation-matrix).
 
 ## 5. Test evidence — execution status
 
@@ -39,11 +41,11 @@ See [`../build-manifest.json`](../build-manifest.json) for planned B2-01…B2-12
 | Original list (populated / empty) and item (200 / 404), database-sourced | Test cases prepared; **DB run pending** | `./test.ps1` output; attach SQL fixture and HTTP status logs |
 | Create → read back → PATCH → read back → DELETE, FK conflicts | Test cases prepared; **DB run pending** | `./test.ps1`; include records and HTTP statuses |
 | Filtering, tie-breaking, next/previous links, bad/empty/page bounds | Test cases prepared; **DB run pending** | `./test.ps1` and browser screenshots |
-| JSON/XML/YAML helpers and upstream offline path | **Local helper and cross-format semantic check PASS** | `php scripts/test-representations.php`; captured output in [`../evidence/local-checks.txt`](../evidence/local-checks.txt) |
+| JSON/XML/YAML helpers and upstream offline path | **Local helper and cross-format semantic check PASS** | `php scripts/test-representations.php`; the delivery checklist cited `evidence/local-checks.txt` (not included in this archive) |
 | Media-type failures 406/415 and request-correlation ID | **406 and request-log correlation tested over local PHP HTTP**; 415 DB-backed HTTP case still pending | `python scripts/test-http-no-db.py`; then `./test.ps1` plus Docker request log |
 | GitHub 200 response, timeout/failure and PHP/JS consumer demo | Failure helper checked; **live success pending** | `./run.ps1`, set project repo URL, `php scripts/context-consumer.php ses_101`, browser context button |
 
-**A script's presence is not a passing test.** Fill actual pass/fail results and logs in [`demo-evidence.md`](demo-evidence.md) after running on a Docker-capable host.
+The [archived worksheet](resource-workflow-worksheet.md) distinguishes pending tests from observed results.
 
 ## 6. Known limitations / Build 3 scope
 

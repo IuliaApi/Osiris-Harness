@@ -1,4 +1,6 @@
-# Build 1 delivery record
+# Read-only sessions: delivery record
+
+Archived October 2026 coursework. The commands, paths, expected responses and backlog below describe the original two-GET service. For the running workspace see the [operator guide](../../README.md).
 
 Build 1 contains one PHP file, two session-read operations, a browser page, and a relational schema with synthetic data. `SessionController::list()` and `get()` in `backend/public/index.php` execute PDO `SELECT` queries directly. There are no repository classes, identity selection, authentication, filters, write endpoints, or CLI.
 
@@ -12,7 +14,7 @@ Browser <- HTTP status and JSON
 Requires Docker Desktop with Compose and PowerShell. Run commands from the repository root. Start the app with `.\run.ps1` if it is not already running.
 
 1. Open the repository and team Project board. Show Build 1 tasks, owners/reviewers, completed PRs, and the submitted SHA from `git rev-parse HEAD`. Check that this commit is visible on GitHub before calling it submitted.
-2. Show the [schema diagram](schema.svg), `database/schema.sql`, and `database/seeds/demo.sql`. The [draw.io source](schema.drawio) is editable through File > Open from > Device at https://app.diagrams.net/. Explain `users.id -> projects.user_id` and `projects.id -> sessions.project_id`: each parent can have many children.
+2. Show the [schema diagram](session-reads-schema.svg), `database/schema.sql`, and `database/seeds/demo.sql`. The [draw.io source](session-reads-schema.drawio) is editable through File > Open from > Device at https://app.diagrams.net/. Explain `users.id -> projects.user_id` and `projects.id -> sessions.project_id`: each parent can have many children.
 3. Import `docs/openapi.yaml` into https://editor.swagger.io/. Show the two GET operations, required `sessionId`, object versus array shapes, and populated, empty, and missing examples.
 4. Open http://127.0.0.1:8080/, press F12, and select Network. Click "Load sessions". Inspect `GET /sessions`, status `200`, `Content-Type: application/json; charset=utf-8`, and the displayed list.
 5. Click a session, or enter `ses_101` in "Session ID" and click "Get session". Show the item request, status `200`, and its JSON object on the page.
@@ -25,9 +27,9 @@ Optional Adminer: run `docker compose up -d adminer`, then open http://127.0.0.1
 
 ## Schema and response agreement
 
-[`database/schema.sql`](../database/schema.sql) defines `users` to `projects` to `sessions` as one-to-many relationships. Primary keys identify rows; indexed foreign keys preserve relationships. Required text cannot be blank, usernames/emails are unique, session status is constrained, and update timestamps cannot precede creation timestamps. Both demonstration databases use this same three-table schema.
+The snapshot's `database/schema.sql` defines `users` to `projects` to `sessions` as one-to-many relationships. Primary keys identify rows; indexed foreign keys preserve relationships. Required text cannot be blank, usernames/emails are unique, session status is constrained, and update timestamps cannot precede creation timestamps. Both demonstration databases use this same three-table schema.
 
-[`database/seeds/demo.sql`](../database/seeds/demo.sql) provides two synthetic users, two projects, and five sessions. The API exposes every session, including both owners' rows. The reported local dataset has six sessions; startup preserves local additions. Five-row expectations apply to a fresh canonical test fixture, not every running database.
+Its `database/seeds/demo.sql` provides two synthetic users, two projects, and five sessions. The API exposes every session, including both owners' rows. The reported local dataset has six sessions; startup preserves local additions. Five-row expectations apply to a fresh canonical test fixture, not every running database.
 
 | Session | Project | Owner | Title | Status |
 | --- | --- | --- | --- | --- |
@@ -54,7 +56,7 @@ List order is `created_at`, then `id`, ascending. With the current seed dates it
 
 SQL `project_id`, `created_at`, and `updated_at` map to JSON `projectId`, `createdAt`, and `updatedAt`. Timestamps use RFC 3339 UTC with `Z`, omitting fractional seconds when zero. A missing item returns `404`; an empty list returns `200` with `[]`. Known routes reject other methods with `405` and `Allow: GET`. Unknown routes return `404`. There are no deferred-operation stubs.
 
-The standalone [OpenAPI 3.0.3 file](openapi.yaml) defines only `GET /sessions` and `GET /sessions/{sessionId}`, a required path parameter, array/object schemas, and the four case examples.
+The snapshot's `docs/openapi.yaml` (OpenAPI 3.0.3) defines only `GET /sessions` and `GET /sessions/{sessionId}`, a required path parameter, array/object schemas, and the four case examples.
 
 ## Four focused checks
 

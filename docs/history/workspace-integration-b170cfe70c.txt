@@ -1,0 +1,465 @@
+Build 3 isolated HTTP/PostgreSQL verification UTC 2026-11-19T17:22:19.6061199Z
+sha256:1f1d960e8c003cc5fd48deecaf07cd19bc6365049e1357dfb94fb50f6bed1cc4
+sha256:8069cb69549a41a32dd2a29cf88c1ba06b6c1e22ecf5913e97d5c56885bb8642
+No syntax errors detected in backend/public/AIProvider.php
+No syntax errors detected in backend/public/Auth.php
+No syntax errors detected in backend/public/Execution.php
+No syntax errors detected in backend/public/GitHubContext.php
+No syntax errors detected in backend/public/Hypermedia.php
+No syntax errors detected in backend/public/Representation.php
+No syntax errors detected in backend/public/index.php
+PASS All three providers are selectable
+PASS Configuration is honest and Ollama availability is not claimed
+PASS No connection is claimed without an upstream request
+PASS Process-wide cloud keys do not configure any account
+PASS Status reflects only scoped credential existence
+PASS Model names are validated
+PASS OpenAI parser displays only output text, not internal reasoning
+PASS Incomplete OpenAI response is not used
+PASS Anthropic parser excludes thinking blocks
+PASS Ollama parser excludes thinking
+PASS Missing API key fails without a fake AI answer
+PASS Unknown provider rejected
+PASS Sanitized upstream error: 401
+PASS Sanitized upstream error: 403
+PASS Sanitized upstream error: 429
+PASS Sanitized upstream error: 503
+PASS Sanitized upstream error: 200
+PASS Malformed provider output is rejected
+PASS Random nonce, encrypted round trip
+PASS Ciphertext bound to identity
+PASS Ciphertext bound to provider
+PASS Modified GCM tag rejected
+PASS Invalid vault key fails closed
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Non-basename rejected
+PASS Invalid tool arguments rejected
+PASS Invalid tool arguments rejected
+PASS Invalid tool arguments rejected
+PASS Invalid tool arguments rejected
+PASS Invalid tool arguments rejected
+PASS Empty synthetic file supported
+PASS Unicode file content preserved
+PASS Retry clears failed result
+PASS Cannot skip running state
+PASS Completed task immutable
+PASS Premature result rejected
+PASS Version precondition required
+PASS Invalid version precondition
+PASS Invalid version precondition
+PASS Invalid version precondition
+PASS Invalid version precondition
+PASS Invalid version precondition
+PASS Strong version accepted
+PASS XML negotiation
+PASS XML escaping
+PASS XML null handling
+PASS XML numeric typing
+PASS YAML quoting
+PASS YAML boolean
+PASS weighted YAML negotiation
+PASS Unsupported Accept yields 406
+PASS Accept  -> application/json
+PASS Accept image/png;q=1, text/yaml;q=0.2 -> text/yaml
+PASS Accept application/json;q=0, */*;q=1 -> application/xml
+PASS Accept application/json;q=0.1, application/*;q=0.9 -> application/xml
+PASS Accept application/*;q=0, */* -> text/xml
+PASS Accept text/yaml;q=0.99, application/json -> application/json
+PASS Accept text/xml;q=oops, application/yaml;q=0.1 -> application/yaml
+PASS Accept application/json; charset=utf-8;q=0, application/json, text/xml;q=0.3 -> text/xml
+PASS Accept text/plain; profile="x, application/xml", application/json -> application/json
+PASS Wildcard exclusion yields 406
+PASS Case-insensitive UTF-8 alias
+PASS Unsupported Content-Type 
+PASS Unsupported Content-Type text/plain
+PASS Unsupported Content-Type application/xml; charset=utf-16
+PASS Unsupported Content-Type application/json; charset=utf-8; charset=ascii
+PASS Canonical typed application/json request
+PASS Canonical typed text/xml request
+PASS Canonical typed text/yaml request
+PASS Invalid application/json case 0 -> 400
+PASS Invalid application/json case 1 -> 400
+PASS Invalid application/json case 2 -> 400
+PASS Invalid application/json case 3 -> 400
+PASS Invalid application/json case 4 -> 422
+PASS Invalid application/xml case 5 -> 400
+PASS Invalid application/xml case 6 -> 400
+PASS Invalid application/xml case 7 -> 400
+PASS Invalid application/xml case 8 -> 400
+PASS Invalid application/xml case 9 -> 400
+PASS Invalid application/xml case 10 -> 400
+PASS Invalid application/xml case 11 -> 422
+PASS Invalid application/xml case 12 -> 400
+PASS Invalid application/yaml case 13 -> 400
+PASS Invalid application/yaml case 14 -> 400
+PASS Invalid application/yaml case 15 -> 400
+PASS Invalid application/yaml case 16 -> 400
+PASS Invalid application/yaml case 17 -> 400
+PASS Invalid application/yaml case 18 -> 400
+PASS Invalid application/yaml case 19 -> 400
+PASS Invalid application/yaml case 20 -> 400
+PASS Invalid application/yaml case 21 -> 400
+PASS Invalid application/yaml case 22 -> 422
+PASS Invalid application/json case 23 -> 400
+PASS Invalid application/xml case 24 -> 400
+PASS Invalid application/yaml case 25 -> 400
+PASS Invalid application/yaml case 26 -> 413
+PASS No configured repository is explicit
+PASS No SSRF to arbitrary upstream
+PASS Deterministic upstream-failure scenario
+PASS: Fixture success projects bounded fields with unmistakable provenance
+PASS: fixture-timeout is a partial result: upstream_timeout
+PASS: fixture-malformed is a partial result: invalid_upstream_response
+PASS: fixture-quota is a partial result: upstream_rate_limited
+PASS: fixture-failure is a partial result: upstream_http_503
+PASS: Offline and client query/header overrides never claim an external contact
+PASS: Unrecognized server transport fails closed
+PASS: No repository is not a failure or a fixture result
+PASS: Invalid URLs, credentials, origins, escapes, path traversal and overlong segments rejected before either transport
+PASS: Policy upstream_response_too_large
+PASS: Policy upstream_network_error
+PASS: Policy upstream_http_301
+PASS: Policy upstream_http_403
+PASS: Policy upstream_http_404
+PASS: Policy upstream_http_500
+PASS: Policy upstream_rate_limited
+PASS: Policy upstream_rate_limited
+PASS: Policy upstream_rate_limited
+PASS: Mismatched, private, unsafe, wrongly typed and oversized 200 payloads cannot become repository metadata
+PASS: Exactly 64 KiB, optional null description and canonical GitHub casing supported; unknown fields dropped
+PASS JSON/XML/YAML input and output preserve lists, maps, scalars and method-aware links
+PASS synthetic Ollama transport: success
+PASS synthetic Ollama transport: invalid
+PASS synthetic Ollama transport: quota
+PASS synthetic Ollama transport: oversize
+PASS public browser route returns HTML without PostgreSQL
+PASS private routes reject anonymous callers before accessing PostgreSQL
+PASS 404 structured JSON error and correlated request ID
+PASS unknown browser pages show a 404 page; API clients receive JSON
+PASS unsupported Accept gives 406 without leaking warnings or DB errors
+PASS unsupported Accept on routing and method errors returns structured 406
+PASS public authentication method/query errors are correlated without PostgreSQL
+PASS PHP request logs include the matching IDs for all HTTP responses
+sha256:a3c7615e717f8343b0a84cd81de2aefa114a0bbf759f4159db8e8e85e10967d4
+psql:/fixtures/build2.sql:9: NOTICE:  relation "messages" already exists, skipping
+psql:/fixtures/build2.sql:19: NOTICE:  relation "tasks" already exists, skipping
+psql:/fixtures/build2.sql:20: NOTICE:  relation "messages_session_created_idx" already exists, skipping
+psql:/fixtures/build2.sql:21: NOTICE:  relation "tasks_session_created_idx" already exists, skipping
+psql:/fixtures/build2.sql:22: NOTICE:  relation "sessions_created_id_idx" already exists, skipping
+psql:/fixtures/build2.sql:23: NOTICE:  relation "sessions_project_created_idx" already exists, skipping
+psql:/fixtures/build2.sql:9: NOTICE:  relation "messages" already exists, skipping
+psql:/fixtures/build2.sql:19: NOTICE:  relation "tasks" already exists, skipping
+psql:/fixtures/build2.sql:20: NOTICE:  relation "messages_session_created_idx" already exists, skipping
+psql:/fixtures/build2.sql:21: NOTICE:  relation "tasks_session_created_idx" already exists, skipping
+psql:/fixtures/build2.sql:22: NOTICE:  relation "sessions_created_id_idx" already exists, skipping
+psql:/fixtures/build2.sql:23: NOTICE:  relation "sessions_project_created_idx" already exists, skipping
+Account provisioned. All previous sessions revoked.
+Account provisioned. All previous sessions revoked.
+Account provisioned. All previous sessions revoked.
+Account provisioned. All previous sessions revoked.
+Account provisioned. All previous sessions revoked.
+Account provisioned. All previous sessions revoked.
+Account provisioned. All previous sessions revoked.
+PASS GET <unknown route> 404 application/json
+PASS GET /auth/me 401 application/json
+PASS GET /api 401 application/json
+PASS GET /api/runtime 401 application/json
+PASS GET /projects 401 application/json
+PASS GET /sessions 401 application/json
+PASS GET /sessions/{sessionId} 401 application/json
+PASS GET /projects/{projectId}/sessions 401 application/json
+PASS GET /sessions/{sessionId}/context 401 application/json
+PASS GET /sessions/{sessionId}/tool-runs 401 application/json
+PASS POST /sessions 401 application/json
+PASS GET /sessions 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions 200 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS POST /auth/logout 403 application/json
+PASS POST /auth/logout 204 text/html
+PASS GET /auth/me 401 application/json
+PASS POST /auth/login 200 application/json
+PASS GET /auth/me 200 application/json
+PASS GET /auth/me 401 application/json
+PASS GET /api 200 application/json
+PASS POST /api/maintenance/prune 403 application/json
+PASS POST /api/maintenance/prune 403 application/json
+PASS POST /api/maintenance/prune 204 text/html
+PASS GET /auth/me 200 application/json
+PASS public pages, missing/invalid credentials, password hashing, session invalidation, empty + populated original GET vs SQL
+PASS GET /sessions 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions 200 application/json
+PASS GET /sessions 400 application/json
+PASS GET /sessions 400 application/json
+PASS GET /sessions 400 application/json
+PASS GET /sessions 400 application/json
+PASS GET /sessions 400 application/json
+PASS GET /sessions 400 application/json
+PASS POST /sessions 400 application/json
+PASS DELETE /projects/{projectId} 400 application/json
+PASS DELETE /sessions/{sessionId} 400 application/json
+PASS POST /sessions/{sessionId} 405 application/json
+PASS GET /sessions/{sessionId}/chat 405 application/json
+PASS bounded collections, total/empty/overrun, followed preserved sort/filter links, invalid methods and controls
+PASS GET /api 200 application/json
+PASS GET /projects 200 application/json
+PASS GET /sessions 200 application/json
+PASS POST /projects 403 application/json
+PASS POST /projects 403 application/json
+PASS POST /projects 403 application/json
+PASS POST /projects 403 application/json
+PASS POST /projects 422 application/json
+PASS GET /api 200 application/json
+PASS POST /projects 403 application/json
+PASS POST /projects 201 application/json
+PASS POST /projects/{projectId}/sessions 201 application/yaml
+PASS POST /sessions/{sessionId}/messages 201 application/xml
+PASS POST /sessions/{sessionId}/tasks 201 application/json
+PASS POST /projects/{projectId}/sessions 409 application/json
+PASS PATCH /projects/{projectId} 422 application/json
+PASS PATCH /sessions/{sessionId} 422 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 422 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/xml
+PASS GET /sessions/{sessionId} 200 application/yaml
+PASS GET /sessions/{sessionId} 200 text/xml
+PASS GET /sessions/{sessionId} 200 text/yaml
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/xml
+PASS GET /sessions/{sessionId} 200 application/yaml
+PASS GET /sessions/{sessionId} 404 application/json
+PASS GET /sessions/{sessionId} 404 application/xml
+PASS GET /sessions/{sessionId} 404 application/yaml
+PASS GET /sessions/{sessionId} 406 application/json
+PASS GET /sessions/{sessionId} 406 application/json
+PASS POST /projects/{projectId}/sessions 415 application/json
+PASS POST /projects/{projectId}/sessions 413 application/json
+PASS POST /projects/{projectId}/sessions 422 application/json
+PASS POST /projects/{projectId}/sessions 422 application/json
+PASS POST /projects/{projectId}/sessions 422 application/json
+PASS POST /projects/{projectId}/sessions 400 application/json
+PASS POST /projects/{projectId}/sessions 400 application/json
+PASS POST /projects/{projectId}/sessions 400 application/json
+PASS POST /projects/{projectId}/sessions 400 application/json
+PASS POST /projects/{projectId}/sessions 400 application/json
+PASS POST /projects/{projectId}/sessions 400 application/json
+PASS GET /projects/{projectId} 404 application/json
+PASS GET /projects/{projectId}/sessions 404 application/json
+PASS GET /sessions/{sessionId} 404 application/json
+PASS GET /sessions/{sessionId}/context 404 application/json
+PASS GET /sessions/{sessionId}/messages 404 application/json
+PASS GET /sessions/{sessionId}/messages/{messageId} 404 application/json
+PASS GET /sessions/{sessionId}/tasks/{taskId} 404 application/json
+PASS GET /sessions 200 application/json
+PASS GET /projects 200 application/json
+PASS GET /projects/{projectId} 404 application/json
+PASS GET /projects/{projectId}/sessions 404 application/json
+PASS GET /sessions/{sessionId} 404 application/json
+PASS GET /sessions/{sessionId}/context 404 application/json
+PASS GET /sessions/{sessionId}/messages 404 application/json
+PASS GET /sessions/{sessionId}/messages/{messageId} 404 application/json
+PASS GET /sessions/{sessionId}/tasks/{taskId} 404 application/json
+PASS GET /sessions 200 application/json
+PASS GET /projects 200 application/json
+PASS GET /projects/{projectId} 404 application/json
+PASS GET /projects/{projectId}/sessions 404 application/json
+PASS GET /sessions/{sessionId} 404 application/json
+PASS GET /sessions/{sessionId}/context 404 application/json
+PASS GET /sessions/{sessionId}/messages 404 application/json
+PASS GET /sessions/{sessionId}/messages/{messageId} 404 application/json
+PASS GET /sessions/{sessionId}/tasks/{taskId} 404 application/json
+PASS GET /sessions 200 application/json
+PASS GET /projects 200 application/json
+PASS GET /projects/{projectId} 404 application/json
+PASS GET /projects/{projectId}/sessions 404 application/json
+PASS GET /sessions/{sessionId} 404 application/json
+PASS GET /sessions/{sessionId}/context 404 application/json
+PASS GET /sessions/{sessionId}/messages 404 application/json
+PASS GET /sessions/{sessionId}/messages/{messageId} 404 application/json
+PASS GET /sessions/{sessionId}/tasks/{taskId} 404 application/json
+PASS GET /sessions 200 application/json
+PASS GET /projects 200 application/json
+PASS DELETE /sessions/{sessionId} 404 application/json
+PASS POST /sessions/{sessionId}/messages 404 application/json
+PASS GET /sessions/{sessionId}/messages/{messageId} 404 application/json
+PASS GET /projects/{projectId}/members 200 application/json
+PASS POST /projects/{projectId}/members 200 application/json
+PASS GET /projects/{projectId}/members 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS PATCH /sessions/{sessionId} 200 application/json
+PASS POST /projects/{projectId}/members 403 application/json
+PASS DELETE /projects/{projectId} 403 application/json
+PASS POST /projects/{projectId}/members 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS PATCH /sessions/{sessionId} 403 application/json
+PASS DELETE /projects/{projectId}/members/{userId} 204 text/html
+PASS GET /sessions/{sessionId} 404 application/json
+PASS PATCH /projects/{projectId} 200 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS PATCH /sessions/{sessionId} 403 application/json
+PASS POST /sessions/{sessionId}/chat 403 application/json
+PASS PATCH /projects/{projectId} 200 application/json
+PASS GET /sessions/{sessionId} 404 application/json
+PASS negotiated real JSON/XML/YAML inputs, semantic outputs/errors, duplicate keys and IDs, role-aware discovery, tenant/membership scoping and revocation
+PASS POST /projects/{projectId}/sessions 201 application/json
+PASS PATCH /sessions/{sessionId} 200 application/json
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/xml
+PASS PATCH /sessions/{sessionId} 200 application/xml
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/yaml
+PASS PATCH /sessions/{sessionId} 200 application/yaml
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/json
+PASS PATCH /sessions/{sessionId} 200 application/json
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/xml
+PASS PATCH /sessions/{sessionId} 200 application/xml
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/yaml
+PASS PATCH /sessions/{sessionId} 200 application/yaml
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/json
+PASS PATCH /sessions/{sessionId} 200 application/json
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/xml
+PASS PATCH /sessions/{sessionId} 200 application/xml
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST /projects/{projectId}/sessions 201 application/yaml
+PASS PATCH /sessions/{sessionId} 200 application/yaml
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS POST and PATCH × three input formats × three negotiated response formats
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 428 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 409 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 200 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 412 application/json
+PASS GET /sessions/{sessionId}/tasks/{taskId} 200 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 200 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 200 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 200 application/json
+PASS PATCH /sessions/{sessionId}/tasks/{taskId} 200 application/json
+PASS two competing task writers: one commits, one 412; illegal transition, failed-task retry and terminal state vs SQL
+PASS GET /sessions/{sessionId} 200 application/json
+PASS GET /sessions/{sessionId}/tool-runs 200 application/json
+PASS POST /sessions/{sessionId}/tool-runs 422 application/json
+PASS POST /sessions/{sessionId}/tool-runs 422 application/json
+PASS POST /sessions/{sessionId}/tool-runs 422 application/json
+PASS POST /sessions/{sessionId}/tool-runs 201 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/approve 404 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/execute 409 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/approve 428 application/json
+PASS PATCH /projects/{projectId} 200 application/json
+PASS GET /sessions/{sessionId}/tool-runs/{runId} 200 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/approve 403 application/json
+PASS POST /sessions/{sessionId}/tool-runs 403 application/json
+PASS PATCH /projects/{projectId} 200 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/approve 200 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/execute 409 application/json
+PASS POST /sessions/{sessionId}/tool-runs 201 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/approve 200 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/execute 200 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/execute 412 application/json
+PASS POST /sessions/{sessionId}/tool-runs/{runId}/execute 200 application/json
+PASS GET /sessions/{sessionId}/tool-runs 200 application/json
+PASS GET /sessions/{sessionId}/tool-runs 200 application/json
+PASS allowlist, read-only actor, private run, explicit approval, single execution, rolled-back missing file and successful retry
+PASS GET /sessions/{sessionId}/context 200 application/json
+PASS GET /sessions/{sessionId}/context 400 application/json
+PASS GET /sessions/{sessionId}/context 200 application/json
+PASS GET /sessions/{sessionId}/context 200 application/json
+PASS GET /sessions/{sessionId}/context 200 application/json
+PASS GET /sessions/{sessionId}/context 200 application/json
+PASS GET /sessions/{sessionId}/context 200 application/json
+PASS real local DB composite with explicitly labelled transport fixtures: success, timeout, malformed, quota, HTTP 503 and offline
+PASS GET /api/runtime 200 application/json
+PASS GET /api/runtime 200 application/json
+PASS POST /sessions/{sessionId}/chat 422 application/json
+PASS POST /sessions/{sessionId}/chat 422 application/json
+PASS POST /sessions/{sessionId}/chat 422 application/json
+PASS POST /sessions/{sessionId}/chat 503 application/json
+PASS GET /api/budget 200 application/json
+PASS PUT /api/credentials/{provider} 403 application/json
+PASS PUT /api/credentials/{provider} 403 application/json
+PASS GET /api/runtime 200 application/json
+PASS PUT /api/credentials/{provider} 200 application/json
+PASS GET /api/runtime 200 application/json
+PASS GET /api/runtime 200 application/json
+PASS POST /sessions/{sessionId}/chat 502 application/json
+PASS POST /sessions/{sessionId}/chat 429 application/json
+PASS GET /api/budget 200 application/json
+PASS GET /sessions/{sessionId}/messages 200 application/json
+PASS GET /api/budget 200 application/json
+PASS DELETE /api/credentials/{provider} 204 text/html
+PASS GET /api/runtime 200 application/json
+PASS PATCH /sessions/{sessionId} 200 application/json
+PASS POST /sessions/{sessionId}/chat 409 application/json
+PASS PATCH /sessions/{sessionId} 200 application/json
+PASS actor-specific encrypted key CRUD, missing-key/archived/offline failures, competing last budget unit, zero saved chat turns
+PASS POST /sessions/{sessionId}/chat 422 application/json
+PASS GET /sessions/{sessionId}/messages 200 application/json
+PASS POST /sessions/{sessionId}/chat 200 application/json
+PASS GET /sessions/{sessionId}/messages 200 application/json
+PASS DELETE /sessions/{sessionId}/messages/{messageId} 204 text/html
+PASS DELETE /sessions/{sessionId}/messages/{messageId} 204 text/html
+PASS synthetic Ollama HTTP transport: successful dispatch, atomic turn-pair rollback, retry and SQL/API agreement; no live inference claimed
+PASS reapplied additive migrations after real writes; all public table rows identical
+PASS DELETE /sessions/{sessionId} 409 application/json
+PASS DELETE /sessions/{sessionId} 409 application/json
+PASS GET /sessions/{sessionId} 200 application/json
+PASS DELETE /sessions/{sessionId} 204 text/html
+PASS GET /sessions/{sessionId} 404 application/json
+PASS GET /sessions/{sessionId}/messages/{messageId} 404 application/json
+PASS GET /sessions/{sessionId}/tasks/{taskId} 404 application/json
+PASS DELETE /projects/{projectId} 204 text/html
+PASS FK conflict, injected rollback including audit rows, retry, cascade cleanup, original seed counts intact
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 401 application/json
+PASS POST /auth/login 429 application/json
+PASS bounded authentication attempts and Retry-After
+PASS 289 black-box HTTP exchanges; non-HTML representations checked against OpenAPI
+PASS 275 real request-log correlations; no password, key, cookie, CSRF token or prompt in logs
+PASS: Chromium login, reload, persisted project/session/message/task, model choice, demonstrations, logout and 404
+Build 3 QA passed; disposable resources removed.

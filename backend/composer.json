@@ -1,10 +1,13 @@
 {
-  "name": "osiris/harness-build-2-terminal",
+  "name": "osiris/harness",
   "type": "project",
   "require": {
-    "php": ">=8.4",
+    "php": ">=8.4.1",
+    "ext-curl": "*",
+    "ext-dom": "*",
     "ext-json": "*",
     "ext-pdo": "*",
-    "ext-pdo_pgsql": "*"
+    "ext-pdo_pgsql": "*",
+    "symfony/yaml": "^8.1.11"
   }
 }

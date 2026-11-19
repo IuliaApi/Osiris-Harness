@@ -6,15 +6,28 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: postgres://osiris_dev:osiris_dev_local_only@db:5432/${OSIRIS_DATABASE_NAME:-osiris_dev}
+      DATABASE_URL: postgres://osiris_app@db:5432/${OSIRIS_DATABASE_NAME:-osiris_dev}
+      OSIRIS_DB_PASSWORD_FILE: /run/osiris/db.key
       OSIRIS_GITHUB_MODE: ${OSIRIS_GITHUB_MODE:-online}
-      # Secrets remain inside the API container, never in browser responses.
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OSIRIS_VAULT_KEY_FILE: /run/osiris/vault.key
+      OSIRIS_DAILY_CHAT_LIMIT: ${OSIRIS_DAILY_CHAT_LIMIT:-20}
       OSIRIS_OPENAI_MODEL: ${OSIRIS_OPENAI_MODEL:-gpt-4.1-mini}
-      OSIRIS_ANTHROPIC_MODEL: ${OSIRIS_ANTHROPIC_MODEL:-claude-haiku-5-5}
+      OSIRIS_ANTHROPIC_MODEL: ${OSIRIS_ANTHROPIC_MODEL:-claude-haiku-4-5}
       OSIRIS_OLLAMA_MODEL: ${OSIRIS_OLLAMA_MODEL:-llama3.2}
       OSIRIS_OLLAMA_ENABLED: ${OSIRIS_OLLAMA_ENABLED:-1}
+    volumes:
+      - type: bind
+        source: ./.local/vault.key
+        target: /run/osiris/vault.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.local/db.key
+        target: /run/osiris/db.key
+        read_only: true
+        bind:
+          create_host_path: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -26,8 +39,22 @@ services:
     cpus: 0.5
     pids_limit: 50
     init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,noexec,nosuid,nodev
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options: {max-size: "5m", max-file: "3"}
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(str_contains((string) @file_get_contents('http://127.0.0.1:8080/login'), 'Osiris') ? 0 : 1);"]
+      interval: 10s
+      start_period: 3s
+      timeout: 3s
+      retries: 3
   adminer:
-    image: adminer:5-standalone
+    profiles: [tools]
+    image: adminer:5-standalone@sha256:e3a6b4942dd088a29cc8bbce22553429247c5c2b30b07d856ae49012b5c84a5b
     environment:
       ADMINER_DEFAULT_SERVER: db
     ports:
@@ -40,7 +67,7 @@ services:
     pids_limit: 50
     init: true
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     environment:
       POSTGRES_DB: osiris_dev
       POSTGRES_USER: osiris_dev
@@ -49,7 +76,6 @@ services:
       - "127.0.0.1:55438:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=20"]
     mem_limit: 256m
     cpus: 0.5

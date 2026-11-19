@@ -1,0 +1,4 @@
+# Host-side real HTTP / HAR validator; not needed by the PHP application.
+PyYAML>=6.0.2,<7
+jsonschema[format-nongpl]>=4.23,<5
+defusedxml>=0.7.1,<1

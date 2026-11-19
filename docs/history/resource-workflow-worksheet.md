@@ -1,6 +1,6 @@
-# Build 2 demonstration — evidence worksheet
+# Resource workflows: demonstration worksheet
 
-> This worksheet is **not a record of successful database or network tests**. Fill in actual timestamps, HTTP responses, IDs and evidence links from a real Docker-backed execution.
+Archived coursework. This was a worksheet for the earlier unauthenticated application. Its commands and example paths are historical; blank fields are not evidence of successful database or network tests.
 
 | Step | Commands / UI action | Expected evidence | Recorded actual result |
 | --- | --- | --- | --- |

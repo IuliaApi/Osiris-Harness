@@ -1,0 +1,25 @@
+name: Workspace integration
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Test the workspace API and browser against disposable PostgreSQL
+        shell: pwsh
+        run: |
+          Start-Transcript -Path workspace-integration.log
+          try {
+            Write-Host "Testing commit $env:GITHUB_SHA"
+            ./test.ps1 -Browser
+          } finally { Stop-Transcript }
+      - name: Preserve the integration test transcript
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: workspace-integration-${{ github.sha }}
+          path: workspace-integration.log
+          retention-days: 30

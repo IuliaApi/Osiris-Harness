@@ -1,5 +1,3 @@
-BEGIN;
-
 INSERT INTO users (id, username, email) VALUES
     ('usr_demo_one', 'demo_one', 'one@example.test'),
     ('usr_demo_two', 'demo_two', 'two@example.test');
@@ -19,5 +17,3 @@ INSERT INTO sessions (id, project_id, title, status, created_at, updated_at) VAL
         '2026-10-12T09:00:00Z', '2026-10-14T12:00:00Z'),
     ('ses_202', 'prj_web', 'Test contact form', 'completed',
         '2026-10-11T08:00:00Z', '2026-10-13T10:00:00Z');
-
-COMMIT;
