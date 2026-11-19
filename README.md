@@ -26,7 +26,7 @@ Use `.\run.ps1 -Tools -Open` for the optional Adminer at <http://127.0.0.1:8083/
 
 Start a **New chat** and type `/` to see the commands. `/model` opens a searchable list grouped by provider. It includes installed local models and the models reported for your configured accounts. Where a provider offers only an SDK catalog, a listed model is not proof that your account can use it. Selecting a model changes this thread without sending a message.
 
-The composer shows the active provider and model even when the thread is idle.
+The composer shows the model selected for the next turn. Each generated reply is labeled with the model that answered, even if you switch models later. If the provider doesn't report a more specific model ID, Osiris uses the dispatched ID. Messages with no recorded model are labeled **Assistant**.
 
 Commands report settings and errors outside the transcript. During a model call the terminal shows the selected model and elapsed time; tool calls and their results appear as they finish. The activity indicator does not display private model reasoning.
 
@@ -36,7 +36,7 @@ Commands report settings and errors outside the transcript. During a model call 
 
 Use `/permissions` to choose what the agent may do in this chat. **Ask** (default) prompts before writing. **Allow** can create new files but asks before replacing existing content. **YOLO** can create and edit without asking. All three can list, search and read the chat's files; none grants host filesystem or shell access. The setting is saved for your account and this chat, not for other threads or collaborators. Changing it does not approve a pending request.
 
-With tools on, try `List the files in this workspace using glob.` When a write needs permission, inspect its contents in the transcript. **Allow once** applies it and continues the turn; **Deny** stops the turn. A stale proposal cannot overwrite a newer edit. Use `/tools off` for plain conversation.
+Workspace tools are on by default in new chats. Try `List the files in this workspace using glob.` When a write needs permission, inspect its contents in the transcript. **Allow once** applies it and continues the turn; **Deny** stops the turn. A stale proposal cannot overwrite a newer edit. Use `/tools off` for plain conversation in that thread, or `/tools on` to turn them back on.
 
 You can leave a turn and return to it. Reloading never starts a paid request. Cancel stops further steps; a provider request already sent may still finish and consume budget. Each turn has at most four tool rounds and one final answer request. **Ctrl+K** (Mac: **⌘K**) still opens workspace navigation.
 

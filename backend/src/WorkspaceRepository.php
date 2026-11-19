@@ -7,7 +7,7 @@ final class WorkspaceRepository
     private const FIELDS = [
         'projects' => ['id', 'user_id', 'name', 'language', 'repository_url', 'visibility', 'created_at', 'updated_at'],
         'sessions' => ['id', 'project_id', 'title', 'status', 'created_at', 'updated_at'],
-        'messages' => ['id', 'session_id', 'role', 'content', 'agent_events', 'created_at'],
+        'messages' => ['id', 'session_id', 'role', 'content', 'model', 'agent_events', 'created_at'],
         'tasks' => ['id', 'session_id', 'title', 'status', 'result', 'version', 'created_at', 'updated_at'],
     ];
     private const WRITABLE = [
@@ -206,13 +206,13 @@ final class WorkspaceRepository
     }
 
     /** Called in the same transaction as successful settlement of the dispatch reservation. */
-    public function recordExchange(string $sessionId, string $prompt, string $answer, array $events = []): array
+    public function recordExchange(string $sessionId, string $prompt, string $answer, string $model, array $events = []): array
     {
-        $stmt = $this->db->prepare('INSERT INTO messages (id, session_id, role, content, agent_events, created_at) VALUES (?, ?, ?, ?, ?, clock_timestamp())');
+        $stmt = $this->db->prepare('INSERT INTO messages (id, session_id, role, content, model, agent_events, created_at) VALUES (?, ?, ?, ?, ?, ?, clock_timestamp())');
         $userId = $this->newId('messages');
         $assistantId = $this->newId('messages');
-        $stmt->execute([$userId, $sessionId, 'user', $prompt, null]);
-        $stmt->execute([$assistantId, $sessionId, 'assistant', $answer, $events === [] ? null : json_encode($events, JSON_THROW_ON_ERROR)]);
+        $stmt->execute([$userId, $sessionId, 'user', $prompt, null, null]);
+        $stmt->execute([$assistantId, $sessionId, 'assistant', $answer, $model, $events === [] ? null : json_encode($events, JSON_THROW_ON_ERROR)]);
         return ['userMessage' => $this->get('messages', $userId), 'assistantMessage' => $this->get('messages', $assistantId)];
     }
 
@@ -317,6 +317,7 @@ final class WorkspaceRepository
     {
         $data = [];
         foreach ($row as $key => $value) {
+            if ($key === 'model' && $value === null) { continue; }
             if ($key === 'agent_events') {
                 if ($value !== null) { $data['agentEvents'] = json_decode($value, true, flags: JSON_THROW_ON_ERROR); }
                 continue;

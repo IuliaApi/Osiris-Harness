@@ -96,8 +96,8 @@ final class AgentRuns
 
     private function start(array $body): array
     {
-        $tools = $body['tools'] ?? null;
-        if (!is_bool($tools)) { throw new ApiError(422, 'Select whether to enable workspace tools', 'validation_error'); }
+        $tools = array_key_exists('tools', $body) ? $body['tools'] : true;
+        if (!is_bool($tools)) { throw new ApiError(422, 'tools must be true or false', 'validation_error'); }
         unset($body['tools']);
         [$prompt,$provider,$model] = SessionChat::parseInput($body);
         return inDatabaseTransaction($this->db, function () use ($tools,$prompt,$provider,$model) {
@@ -178,8 +178,8 @@ final class AgentRuns
                 $steps = $row['steps'];
                 $turns = null;
                 if ($answer['calls'] === []) {
-                    $turns = $this->store->recordExchange($this->session,$row['prompt'],$answer['text'],self::events($steps));
-                    executeSql($db, "UPDATE agent_runs SET status='completed',history='[]',user_message_id=?,assistant_message_id=? WHERE id=?", [$turns['userMessage']['id'],$turns['assistantMessage']['id'],$id]);
+                    $turns = $this->store->recordExchange($this->session,$row['prompt'],$answer['text'],$answer['model'],self::events($steps));
+                    executeSql($db, "UPDATE agent_runs SET status='completed',history='[]',model=?,user_message_id=?,assistant_message_id=? WHERE id=?", [$answer['model'],$turns['userMessage']['id'],$turns['assistantMessage']['id'],$id]);
                 } else {
                     $results = []; $reviews = []; $status = 'ready';
                     foreach ($answer['calls'] as $index => $call) {

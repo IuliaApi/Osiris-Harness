@@ -122,7 +122,7 @@
               <ul id="slash-suggestions" role="listbox" aria-label="Slash commands" hidden></ul>
               <div class="prompt-line">
                 <span class="prompt-sign" aria-hidden="true">❯</span>
-                <textarea id="message-text" aria-label="Message" aria-describedby="chat-hint message-count" aria-controls="slash-suggestions" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ask Osiris, or type / for commands" rows="1" maxlength="6000" required disabled></textarea>
+                <textarea id="message-text" aria-label="Message" aria-describedby="chat-hint" aria-controls="slash-suggestions" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ask Osiris, or type / for commands" rows="1" maxlength="6000" required disabled></textarea>
                 <button class="btn-os primary" type="submit" id="send-message" aria-label="Send message" disabled>Run</button>
               </div>
               <div class="composer-footer">
@@ -131,7 +131,6 @@
                 <button id="chat-settings" class="subtle-link" type="button">Provider settings</button>
                 <button id="thread-permissions" class="subtle-link" type="button" aria-haspopup="dialog" aria-controls="thread-picker" hidden>Permissions</button>
                 <span class="tools-indicator" id="tools-indicator"></span>
-                <span id="message-count" class="hint">0 / 6,000</span>
               </div>
               <p class="hint" role="status" id="chat-hint">Open a thread to use the terminal.</p>
             </form>

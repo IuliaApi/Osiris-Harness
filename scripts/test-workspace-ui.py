@@ -125,6 +125,7 @@ def exercise_inline_consent(page, run):
             pending.get_by_role("button", name="Allow once").click()
             expect(page.locator("#chat-history .assistant").last).to_contain_text("The stored marker is canyon.")
             run("/model ollama/qa:model")
+            expect(page.locator("#chat-history .assistant .message-label").last).to_contain_text("qa:agent-final")
             run("/tools off")
             release.clear()
             run("/goal success")

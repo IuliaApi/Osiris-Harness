@@ -104,7 +104,6 @@ export function createChatWorkbench({state, follow, rel, queryLink, go, projectN
   function syncComposer() {
     editor.style.height = 'auto';
     editor.style.height = `${editor.scrollHeight}px`;
-    byId('message-count').textContent = `${editor.value.length.toLocaleString()} / ${editor.maxLength.toLocaleString()}`;
     composerStatus();
   }
   window.addEventListener('resize', () => { if (state.route === '/chat') syncComposer(); });

@@ -317,6 +317,7 @@ def crud_and_formats(a,b,member,viewer,admin):
     s = session.data
     message = a.follow(s,'createMessage','POST',status=201,raw='id: msg_qa\nrole: user\ncontent: "Quotation: <&>"\n',media='text/yaml',accept=XML)
     assert message.headers['location'] == '/sessions/ses_qa/messages/msg_qa'
+    a.follow(s,'createMessage','POST',status=422,data={'role':'assistant','content':'Manual reply','model':'forged'})
     task = a.follow(s,'createTask','POST',status=201,data={'id':'tsk_qa','title':'Concurrent task','status':'pending'})
     assert task.headers['location'] == '/sessions/ses_qa/tasks/tsk_qa'
     a.req('POST',create['href'],409,{'id':'ses_qa','title':'duplicate'})
@@ -337,6 +338,7 @@ def crud_and_formats(a,b,member,viewer,admin):
     path = '/sessions/ses_qa?include=project,messages,tasks'
     expected = a.req('GET',path).data
     assert expected['project']['id'] == 'prj_qa' and expected['messages'][0]['content'] == 'Quotation: <&>'
+    assert 'model' not in expected['messages'][0]
     assert expected['tasks'][0]['id'] == 'tsk_qa' and expected['messagesPage']['total'] == 1
     for accept, chosen in [(XML,XML),(YAML,YAML),('text/xml','text/xml'),('text/yaml','text/yaml'),('*/*',JSON),
                            ('application/json;q=0.2, application/xml;q=0.9',XML),
@@ -669,6 +671,26 @@ def check_migration_replay():
     passed('reapplied additive migrations after real writes; all public table rows identical')
 
 
+def check_model_backfill(client, session):
+    sid = session['id']
+    plain = one("""SELECT assistant_message_id FROM chat_dispatches
+        WHERE session_id=%s AND model='qa:model' AND outcome='answered'""",sid)
+    # Recreate pre-migration rows: only the final run survives for the agent turn.
+    agent = one("""UPDATE agent_runs SET model='qa:agent' WHERE session_id=%s AND status='completed'
+        RETURNING assistant_message_id""",sid)
+    db.execute('DELETE FROM chat_dispatches WHERE assistant_message_id=%s',(agent,))
+    db.execute('UPDATE messages SET model=NULL WHERE id IN (%s,%s)',(plain,agent))
+    manual = client.follow(session,'createMessage','POST',status=201,data={'role':'assistant','content':'fixture result'}).data
+    assert 'model' not in manual
+    db.execute(Path('/fixtures/migrations/010-message-model.sql').read_text(encoding='utf-8'))
+    db.execute('DELETE FROM chat_dispatches WHERE assistant_message_id=%s',(plain,))
+    history = client.req('GET',session['_links']['self']['href']+'?include=messages').data['messages']
+    models = {m['id']:m['model'] for m in history if 'model' in m}
+    assert models[plain] == 'qa:model' and models[agent] == 'qa:agent'
+    assert manual['id'] not in models and all(m['role'] == 'assistant' for m in history if 'model' in m)
+    passed('legacy attribution survives dispatch pruning; exact final links required, never inferred from text or role')
+
+
 def rollback_delete(a):
     a.req('DELETE','/sessions/ses_qa',409)
     # DELIBERATE database fault after child deletion, before parent deletion.
@@ -746,9 +768,10 @@ def check_logs():
 
 
 def agent_workflow(client, outsider, session):
-    payload = {'message':'Use the marker file', 'provider':'ollama', 'model':'qa:agent', 'tools':True}
+    payload = {'message':'Use the marker file', 'provider':'ollama', 'model':'qa:agent'}
     assert client.follow(session,'agent').data == {'run':None}
     client.follow(session,'startAgent','POST',status=422,data={**payload,'mode':'yolo'})
+    client.follow(session,'startAgent','POST',status=422,data={**payload,'tools':None})
     opened = client.follow(session,'startAgent','POST',status=201,data=payload).data
     client.follow(session,'startAgent','POST',status=409,data=payload)
     outsider.follow(opened,'self',status=404)
@@ -773,11 +796,14 @@ def agent_workflow(client, outsider, session):
     assert read['status'] == 'ready' and read['events'][0]['output'] == 'Wrote 6 bytes'
     assert read['events'][1]['name'] == 'read' and 'canyon' in read['events'][1]['output']
     complete = client.follow(read,'step','POST',data={}).data
+    assert opened['model'] == review['model'] == read['model'] == 'qa:agent'
+    assert complete['model'] == 'qa:agent-final'
     assert complete['status'] == 'completed' and 'step' not in complete['_links']
     assert client.req('GET','/api/budget').data['spent'] == before + 3
     last = next(m for m in client.follow(session,'messages').data['items'] if m.get('agentEvents'))
     trace = [fields(event) for event in complete['events']]
     assert last['content'] == 'The stored marker is canyon.' and last['agentEvents'] == trace
+    assert last['model'] == complete['model']
     assert one('SELECT agent_events FROM messages WHERE id=%s',last['id']) == trace
     second = client.follow(session,'startAgent','POST',status=201,data=payload).data
     cancelled = client.follow(second,'cancel','POST',data={}).data
@@ -922,7 +948,7 @@ def thread_commands(owner, control, member, handler):
             handler.release.set()
         assert pending.result().data['status'] == 'completed'
     assert context('active main') == marker_history + [('user','Active goal:\n' + goal)]
-    assert first == {'id':first['id'],'question':THREAD_CASE+'first aside','answer':'Answer to '+THREAD_CASE+'first aside','provider':'ollama','model':'qa:agent'}
+    assert first == {'id':first['id'],'question':THREAD_CASE+'first aside','answer':'Answer to '+THREAD_CASE+'first aside','provider':'ollama','model':'qa:thread-v2'}
     assert control.follow(session,'asides').data == {'items':[followup,second,first]}
     assert rows('SELECT id,question,answer FROM thread_asides WHERE session_id=%s ORDER BY created_at DESC,id DESC',sid) == [
         (item['id'],item['question'],item['answer']) for item in (followup,second,first)]
@@ -1009,7 +1035,7 @@ def synthetic_chat(b, member, personal):
                          ('write',{'path':'marker.txt','content':'replaced'}),
                          ('write',{'path':'../escape','content':'invalid'})]
                 message = {'role':'assistant','content':'','tool_calls':[{'function':{'name':n,'arguments':args}} for n,args in calls]}
-            body = json.dumps({'done':True,'message':message}).encode()
+            body = json.dumps({'done':True,'message':message,'model':'qa:thread-v2'}).encode()
             self.send_response(200)
             self.send_header('Content-Length',str(len(body)))
             self.end_headers()
@@ -1037,9 +1063,13 @@ def synthetic_chat(b, member, personal):
             finally:
                 db.execute('DROP TRIGGER qa_reject_second ON messages; DROP FUNCTION qa_reject_turn()')
             answer = cl.req('POST',path,200,message).data
-            assert answer['sessionId'] == 'ses_201' and answer['provider'] == 'ollama' and answer['model'] == 'qa:model'
+            assert answer['sessionId'] == 'ses_201' and answer['provider'] == 'ollama'
+            assert answer['model'] == answer['assistantMessage']['model'] == 'qa:model-v2'
+            assert 'model' not in answer['userMessage']
             turns = cl.req('GET','/sessions/ses_201/messages').data['items']
             assert {(r['role'],r['content']) for r in turns} == {('assistant','fixture result'),('user','success')}
+            for turn in turns:
+                assert cl.follow(turn,'self').data == turn == answer[turn['role']+'Message']
             assert sorted((r['id'],r['content']) for r in turns) == rows("SELECT id,content FROM messages WHERE session_id='ses_201' ORDER BY id")
             assert rows("""SELECT outcome,user_message_id,assistant_message_id FROM chat_dispatches
                 WHERE user_id='usr_demo_two' AND session_id='ses_201' ORDER BY outcome""") == [
@@ -1052,13 +1082,15 @@ def synthetic_chat(b, member, personal):
             # turn pair back through the ordinary API as well as PostgreSQL.
             private = Client('api:8095'); private.cookie = member.cookie; private.csrf = member.csrf
             answer = private.follow(personal,'chat','POST',data=message).data
-            assert (answer['sessionId'],answer['provider'],answer['model']) == (personal['id'],'ollama','qa:model')
+            assert (answer['sessionId'],answer['provider'],answer['model']) == (personal['id'],'ollama','qa:model-v2')
             turns = member.follow(personal,'messages').data['items']
             expected = sorted([(answer['userMessage']['id'],'user','success'),
                                (answer['assistantMessage']['id'],'assistant','fixture result')])
             assert sorted((r['id'],r['role'],r['content']) for r in turns) == expected
             assert rows('SELECT id,role,content FROM messages WHERE session_id=%s ORDER BY id',personal['id']) == expected
             assert rows('SELECT user_id,outcome FROM chat_dispatches WHERE session_id=%s',personal['id']) == [('usr_qa_member','answered')]
+            summary = member.req('GET',personal['_links']['messages']['href']+'?view=summary').data['items']
+            assert {m['role']:m.get('model') for m in summary} == {'user':None,'assistant':'qa:model-v2'}
             for turn in turns:
                 b.follow(turn,'self',status=404)
             agent_workflow(private, b, personal)
@@ -1146,6 +1178,7 @@ if __name__ == '__main__':
             personal = standalone_sessions(member,b,viewer,admin)
             synthetic_chat(b,member,personal)
             check_migration_replay()
+            check_model_backfill(member,personal)
             member.follow(personal,'delete','DELETE',status=204)
             member.follow(personal,'self',status=404)
             assert one('SELECT count(*) FROM messages WHERE session_id=%s',personal['id']) == 0

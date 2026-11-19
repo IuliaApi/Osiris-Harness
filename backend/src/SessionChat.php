@@ -105,7 +105,7 @@ final class SessionChat
                 $auth->requireAccess('sessions',$sessionId,'write');
                 $state = executeSql($db, 'SELECT status FROM sessions WHERE id = ? FOR UPDATE', [$sessionId])->fetchColumn();
                 if ($state !== 'active') { throw new ApiError(409, 'Session is no longer active', 'invalid_session_state'); }
-                $turns = $store->recordExchange($sessionId,$prompt,$answer['text']);
+                $turns = $store->recordExchange($sessionId,$prompt,$answer['text'],$answer['model']);
                 self::settle($db,$id,'answered',$turns);
                 return $turns;
             });
@@ -115,7 +115,7 @@ final class SessionChat
         }
         foreach ($turns as &$turn) { $turn['_links'] = resourceLinks('messages',$turn,$auth); }
         unset($turn);
-        return ['sessionId' => $sessionId, ...$turns, 'provider' => $provider, 'model' => $model,
+        return ['sessionId' => $sessionId, ...$turns, 'provider' => $provider, 'model' => $answer['model'],
             '_links' => ['session' => apiLink('/sessions/' . rawurlencode($sessionId)), 'budget' => apiLink('/api/budget')]];
     }
 }

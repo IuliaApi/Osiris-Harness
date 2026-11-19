@@ -124,7 +124,7 @@ export function createAgentConsole({follow, rel, changed, reloadHistory, scroll}
       ready: 'Ready for the next model step. Choose Continue.',
       working: `A step is in progress on ${model}. Refresh to see its result.`,
       review: allApplied(view) ? 'All changes applied. Choose Continue.' : 'This turn needs permission to change a file.',
-      completed: `Completed · ${model}`,
+      completed: 'Completed',
       cancelled: 'Cancelled. Applied changes are kept. A provider call already in flight may still finish.',
       failed: `Failed: ${run.error || 'The run did not complete.'}`,
     }[run.status];

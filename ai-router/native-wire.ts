@@ -1,4 +1,5 @@
 import type { ToolCall } from '@oh-my-pi/pi-ai';
+import { validModel } from './catalog';
 import { invalidTurn, record } from './turns';
 
 function argumentsObject(value: unknown): Record<string, unknown> {
@@ -19,10 +20,28 @@ function* events(raw: string) {
   }
 }
 
+// Multiplexed SDK gateways forward one of several native SSE envelopes. Google
+// also exposes the version on the wire but not on the normalized SDK message.
+export function gatewayEventModel(api: string, data: string): string | undefined {
+  if (data === '[DONE]') return;
+  let event;
+  try { event = JSON.parse(data); } catch { return; }
+  if (!event) return;
+  let id;
+  if (api === 'google-gemini-cli') id = event.response?.modelVersion;
+  else if (api === 'google-generative-ai') id = event.modelVersion;
+  else if (event.type === 'response.created' || event.type === 'response.completed') id = event.response?.model;
+  else if (event.type === 'message_start') id = event.message?.model;
+  else if (Array.isArray(event.choices) && event.choices.length) id = event.model;
+  else if (api === 'factory-droid-agent') id = event.modelVersion;
+  return validModel(id) ? id : undefined;
+}
+
 // pi-ai repairs malformed JSON, can heal text into synthetic calls, and mints
 // provider-specific IDs. Never execute a call without a completed, typed native
 // envelope. Replay the provider's arguments/ID, not the SDK's repaired preview.
-export function nativeCalls(api: string, raw: string): ToolCall[] {
+export function nativeTurn(api: string, raw: string) {
+  let model: string | undefined;
   const calls: ToolCall[] = [];
   if (api === 'ollama-chat') {
     let done = false;
@@ -30,6 +49,7 @@ export function nativeCalls(api: string, raw: string): ToolCall[] {
       if (!line.trim()) continue;
       const chunk = JSON.parse(line);
       if (done || chunk.error || chunk.message?.role !== 'assistant') throw invalidTurn();
+      if (validModel(chunk.model)) model = chunk.model;
       for (const c of chunk.message.tool_calls ?? []) {
         if (!record(c.function?.arguments)) throw invalidTurn();
         calls.push(nativeCall(c.id ?? `call_${crypto.randomUUID()}`, c.function.name, c.function.arguments));
@@ -44,8 +64,12 @@ export function nativeCalls(api: string, raw: string): ToolCall[] {
     let terminal: unknown[] | undefined;
     const finished = [];
     for (const e of events(raw)) {
+      if (e.type === 'response.created' && validModel(e.response?.model)) model = e.response.model;
       if (e.type === 'response.output_item.done' && e.item?.type === 'function_call') finished.push(e.item);
-      if (e.type === 'response.completed' && e.response?.status === 'completed' && Array.isArray(e.response.output)) terminal = e.response.output;
+      if (e.type === 'response.completed' && e.response?.status === 'completed' && Array.isArray(e.response.output)) {
+        terminal = e.response.output;
+        if (validModel(e.response.model)) model = e.response.model;
+      }
       if (e.type === 'response.incomplete' || e.type === 'response.failed' || e.type === 'error') throw invalidTurn();
     }
     if (!terminal) throw invalidTurn();
@@ -62,6 +86,7 @@ export function nativeCalls(api: string, raw: string): ToolCall[] {
       const choice = e.choices[0];
       if (!choice) continue; // Stream usage trailer.
       if (reason || choice.index !== 0) throw invalidTurn();
+      if (validModel(e.model)) model = e.model;
       for (const c of choice.delta?.tool_calls ?? []) {
         if (!Number.isInteger(c.index) || c.index < 0 || c.index > 3 || (c.type && c.type !== 'function')) throw invalidTurn();
         let f = fragments.get(c.index);
@@ -83,6 +108,7 @@ export function nativeCalls(api: string, raw: string): ToolCall[] {
     const pending = new Map<number, {id: string; name: string; input: unknown; json: string}>();
     for (const e of events(raw)) {
       if (e.type === 'error' || done) throw invalidTurn();
+      if (e.type === 'message_start' && validModel(e.message?.model)) model = e.message.model;
       if (e.type === 'content_block_start' && e.content_block?.type === 'tool_use') {
         if (pending.has(e.index) || !record(e.content_block.input)) throw invalidTurn();
         pending.set(e.index, {id: e.content_block.id, name: e.content_block.name, input: e.content_block.input, json: ''});
@@ -98,7 +124,7 @@ export function nativeCalls(api: string, raw: string): ToolCall[] {
     }
     if (!done || pending.size || !['end_turn', 'stop_sequence', 'tool_use'].includes(reason ?? '') || (reason === 'tool_use') !== Boolean(calls.length)) throw invalidTurn();
   }
-  return calls;
+  return {calls, model};
 }
 
 

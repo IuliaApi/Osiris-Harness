@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import { prepare, reply, RouteError } from './router';
 import { complete } from '@oh-my-pi/pi-ai';
-import { nativeCalls } from './native-wire';
+import { gatewayEventModel, nativeTurn } from './native-wire';
 import { accountModels } from './catalog';
 import type { AssistantMessage, FetchImpl, ToolCall } from '@oh-my-pi/pi-ai';
 import { localProviderUrl } from './local-providers';
@@ -22,7 +22,20 @@ describe('Osiris oh-my-pi routing',()=>{
     const result=await reply({...payload,messages:[{role:'user',content:'Hi'},{role:'assistant',content:'Hello'},{role:'user',content:'Continue'}]},async(model,context,options)=>{
       expect(context.messages.map(m=>m.role)).toEqual(['user','assistant','user']);expect(options.apiKey).toBe(payload.apiKey);expect(options.signal).toBeInstanceOf(AbortSignal);
       return {stopReason:'stop',content:[{type:'thinking',thinking:'private'},{type:'text',text:'Visible answer'}]};
-    });expect(result).toEqual({provider:'openai',model:payload.model,text:'Visible answer',calls:[]});
+    });expect(result).toEqual({provider:'openai',model:payload.model,responseModel:payload.model,text:'Visible answer',calls:[]});
+  });
+  test('uses the serving SDK identity, then the dispatched ID, without exposing unsafe metadata',async()=>{
+    const content = [{type:'text' as const,text:'Visible answer'}];
+    for (const [upstreamModel, expected] of [['gateway/version-2','gateway/version-2'], ['bad\nlabel','wire-v1'], ['a'.repeat(241),'wire-v1']]) {
+      const answer = await reply(payload,async(model,_context,options)=>{
+        await options.onPayload?.({model:'wire-v1'});
+        return {model:model.id, upstreamModel, stopReason:'stop', content};
+      });
+      expect(answer.model).toBe(payload.model);
+      expect(answer.responseModel).toBe(expected);
+    }
+    await expect(reply(payload,async()=>({upstreamModel:payload.apiKey,stopReason:'stop',content})))
+      .rejects.toMatchObject({code:'ai_upstream_failure'});
   });
   test('safe failure responses and no silent provider fallback',async()=>{
     await expect(reply(payload,async()=>{throw Error('secret key and upstream details');})).rejects.toThrow('Unable to complete the provider request');
@@ -39,9 +52,9 @@ describe('Osiris oh-my-pi routing',()=>{
   },15000);
   test('real pi-ai OpenAI adapter sends API request and parses streamed text using an explicit test double',async()=>{
     let received:{path:string;key:string|null;body:{model:string}}|undefined;
-    const response={id:'resp_test',object:'response',status:'completed',model:payload.model,output:[{id:'msg_test',type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'Fixture answer',annotations:[]}]}],usage:{input_tokens:5,output_tokens:2,total_tokens:7}};
+    const response={id:'resp_test',object:'response',status:'completed',model:'gpt-4.1-mini-2025-04-14',output:[{id:'msg_test',type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'Fixture answer',annotations:[]}]}],usage:{input_tokens:5,output_tokens:2,total_tokens:7}};
     const events=[
-      {type:'response.created',response:{...response,status:'in_progress',output:[]}},
+      {type:'response.created',response:{...response,model:payload.model,status:'in_progress',output:[]}},
       {type:'response.output_item.added',output_index:0,item:{...response.output[0],status:'in_progress',content:[]}},
       {type:'response.content_part.added',item_id:'msg_test',output_index:0,content_index:0,part:{type:'output_text',text:'',annotations:[]}},
       {type:'response.output_text.delta',item_id:'msg_test',output_index:0,content_index:0,delta:'Fixture answer'},
@@ -53,6 +66,7 @@ describe('Osiris oh-my-pi routing',()=>{
     try{
       const result=await reply(payload,complete,fixtureTransport(fixture.url.origin));
       expect(result.text).toBe('Fixture answer');expect(received?.path).toBe('/v1/responses');expect(received?.key).toBe('Bearer '+payload.apiKey);expect(received?.body.model).toBe(payload.model);
+      expect(result.model).toBe(payload.model);expect(result.responseModel).toBe(response.model);
     }finally{fixture.stop(true);}
   });
   const tools = [{name:'read',description:'Read a workspace file',parameters:{type:'object',properties:{path:{type:'string'}},required:['path']}}];
@@ -87,10 +101,21 @@ describe('Osiris oh-my-pi routing',()=>{
   test('only strict, completed native wire calls survive SDK repairs',()=>{
     const responses = (args:string) => 'data: '+JSON.stringify({type:'response.completed',response:{status:'completed',output:[
       {type:'function_call',status:'completed',call_id:call.id,name:call.name,arguments:args}]}})+'\n\n';
-    expect(nativeCalls('openai-responses',responses('{}'))[0]).toEqual({type:'toolCall',...call,arguments:{}});
-    for (const args of ['[1]','null','{"path":"a",}']) expect(()=>nativeCalls('openai-responses',responses(args))).toThrow();
-    expect(()=>nativeCalls('ollama-chat','{"message":{"role":"assistant","content":"partial"}}')).toThrow();
-    expect(nativeCalls('ollama-chat','{"done":true,"message":{"role":"assistant","content":"<tool_call>text only"}}')).toEqual([]);
+    expect(nativeTurn('openai-responses',responses('{}')).calls[0]).toEqual({type:'toolCall',...call,arguments:{}});
+    for (const args of ['[1]','null','{"path":"a",}']) expect(()=>nativeTurn('openai-responses',responses(args))).toThrow();
+    expect(()=>nativeTurn('ollama-chat','{"message":{"role":"assistant","content":"partial"}}')).toThrow();
+    expect(nativeTurn('ollama-chat','{"done":true,"model":"alias:version","message":{"role":"assistant","content":"<tool_call>text only"}}')).toEqual({calls:[], model:'alias:version'});
+  });
+  test('reads serving identities from typed Anthropic and Chat Completions events, not message content',()=>{
+    const sse = (...events: unknown[]) => events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('');
+    expect(nativeTurn('anthropic-messages',sse({type:'message_start',message:{model:'claude-v2'}},
+      {type:'message_delta',delta:{stop_reason:'end_turn'}},{type:'message_stop'})).model).toBe('claude-v2');
+    expect(nativeTurn('openai-completions',sse({model:'gateway/v2',choices:[{index:0,delta:{content:'hello'},finish_reason:'stop'}]},
+      {model:'usage-only',choices:[]})).model).toBe('gateway/v2');
+    expect(gatewayEventModel('google-gemini-cli','{"response":{"modelVersion":"gemini-v2"}}')).toBe('gemini-v2');
+    expect(gatewayEventModel('google-generative-ai','{"modelVersion":"gemini-v2"}')).toBe('gemini-v2');
+    expect(gatewayEventModel('openrouter','{"choices":[],"model":"usage-only"}')).toBeUndefined();
+    expect(gatewayEventModel('factory-droid-agent','{"type":"response.completed","response":{"model":"resolved-model"}}')).toBe('resolved-model');
   });
   test('Codex model discovery is non-inference and scoped to one supplied account',async()=>{
     const seen: string[]=[];
@@ -118,6 +143,9 @@ describe('Osiris oh-my-pi routing',()=>{
     const key='synthetic-secret';
     await expect(reply({...payload,...ollama,apiKey:JSON.stringify({provider:'ollama',type:'api_key',key})},async()=>({
       stopReason:'stop',content:[{type:'text',text:key}],
+    }),discover)).rejects.toMatchObject({code:'ai_upstream_failure'});
+    await expect(reply({...payload,...ollama,apiKey:JSON.stringify({provider:'ollama',type:'api_key',key})},async()=>({
+      stopReason:'stop',upstreamModel:`model-${key}`,content:[{type:'text',text:'Ready'}],
     }),discover)).rejects.toMatchObject({code:'ai_upstream_failure'});
   });
   test('local provider selection cannot supply a URL or bypass the operator port',async()=>{

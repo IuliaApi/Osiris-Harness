@@ -58,7 +58,7 @@ export function createMessageRenderer({notify}) {
     const user = message.role === 'user';
     const block = element('article', `message ${user ? 'user' : message.role === 'tool' ? 'terminal-tool' : 'assistant'}`);
     if (message.agentEvents) block.append(...message.agentEvents.map(toolLine));
-    const label = element('div', 'message-label', user ? 'you ❯' : message.role === 'assistant' ? 'model' : message.role);
+    const label = element('div', 'message-label', user ? 'you ❯' : message.role === 'assistant' ? (message.model || 'Assistant') : message.role);
     if (message.role === 'assistant') {
       const copy = copyButton('Copy reply', message.content, 'Model reply copied.');
       copy.className = 'subtle-link message-copy';

@@ -122,7 +122,7 @@ function selectResourceFields(array $item, array $query, string $type): array
     if ($view === 'summary') {
         $keys = match ($type) {
             'projects' => ['id', 'name', 'language'],
-            'messages' => ['id', 'role', 'createdAt'],
+            'messages' => ['id', 'role', 'model', 'createdAt'],
             'sessions' => ['id', 'projectId', 'title', 'status', 'createdAt'],
             'tasks' => ['id', 'sessionId', 'title', 'status', 'version', 'createdAt'],
         };

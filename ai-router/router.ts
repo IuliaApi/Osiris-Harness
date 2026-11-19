@@ -3,7 +3,7 @@ import type { Api, AssistantMessage, Context, FetchImpl, Model, StreamOptions, T
 import { accountModels, boundedBody, destination, keyModel, routes, validModel, validProvider } from './catalog';
 import { loginAuth, loginRegistry } from './auth';
 import { conversation, fields, finish, invalidRequest, invalidTurn, record, RouteError } from './turns';
-import { nativeCalls } from './native-wire';
+import { gatewayEventModel, nativeTurn } from './native-wire';
 export { RouteError };
 
 type ChatRequest = Record<string, unknown> & {provider: string; model: string};
@@ -116,7 +116,7 @@ function ollamaPayload(payload: unknown, context: Context) {
 }
 
 type CompleteTurn = (model: Model<Api>, context: Context, options: StreamOptions & {toolChoice?: ToolChoice; preferWebsockets?: boolean}) =>
-  Promise<Pick<AssistantMessage, 'content'|'stopReason'|'errorStatus'>>;
+  Promise<Pick<AssistantMessage, 'content'|'stopReason'|'errorStatus'|'upstreamModel'> & Partial<Pick<AssistantMessage, 'model'>>>;
 export async function reply(input: unknown, completeFn: CompleteTurn = complete, transport: FetchImpl = fetch) {
   const body = requestBody(input);
   const deadline = AbortSignal.timeout(45000);
@@ -124,6 +124,7 @@ export async function reply(input: unknown, completeFn: CompleteTurn = complete,
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, deadline]);
   let sent = false, dispatched = false, failure: RouteError | undefined, wire: string | undefined;
+  let wireModel: string | undefined, dispatchedModel: string | undefined;
   const controls = new Set<string>();
   const singleRequestFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -153,7 +154,16 @@ export async function reply(input: unknown, completeFn: CompleteTurn = complete,
     result = await completeFn(selected as Model<Api>, context, {apiKey, oauthIdentity, maxTokens: Math.min(2048, selected.maxTokens || 2048), signal,
       cacheRetention: 'none', storeResponses: false, preferWebsockets: false, maxHttpAttempts: 1, codexSseMaxAttempts: 1,
       ...(selected.api === 'cursor-agent' ? {transport: 'http2', externalToolExecutor: true} : {}),
-      ...(selected.api === 'ollama-chat' ? {onPayload: (p: unknown) => ollamaPayload(p,context)} : {}),
+      onPayload: (p: unknown) => {
+        if (record(p)) {
+          const id = selected.api === 'cursor-agent' && record(p.requestedModel) ? p.requestedModel.modelId : p.model;
+          if (validModel(id)) dispatchedModel = id;
+        }
+        return selected.api === 'ollama-chat' ? ollamaPayload(p, context) : undefined;
+      },
+      ...(['google-generative-ai','google-gemini-cli','openrouter','factory-droid-agent'].includes(selected.api) ? {
+        onSseEvent: ({data}: {data: string}) => { wireModel = gatewayEventModel(selected.api, data) ?? wireModel; },
+      } : {}),
       ...(!allowCalls && context.tools?.length ? {toolChoice: 'none'} : {}),
       fetch: singleRequestFetch, acceptEmptyResponse: true,
       beforeDispatch: () => { if (dispatched) throw new Error('Automatic provider retry disabled'); dispatched = true; },
@@ -170,7 +180,8 @@ export async function reply(input: unknown, completeFn: CompleteTurn = complete,
   if (wire !== undefined) {
     const api = selected.api;
     try {
-      const calls = nativeCalls(api, wire);
+      const {calls, model} = nativeTurn(api, wire);
+      wireModel = model;
       const sdkCalls = content.filter(b => b.type === 'toolCall');
       if (calls.length !== sdkCalls.length) throw invalidTurn();
       for (const [i,c] of calls.entries()) {
@@ -187,7 +198,13 @@ export async function reply(input: unknown, completeFn: CompleteTurn = complete,
     } catch { throw invalidTurn(); }
   }
   const turn = finish(content, reason, ids, allowCalls, body.provider === 'ollama' ? undefined : apiKey);
-  const answer = {provider: body.provider, model: body.model, ...turn};
+  // The private router echoes the request identity for PHP's dispatch check.
+  // The SDK usually stamps its logical catalog ID in result.model, even when a
+  // different request ID went on the wire. upstreamModel is the serving identity.
+  const responseModel = [result.upstreamModel, wireModel, result.model !== selected.id ? result.model : undefined,
+    dispatchedModel, selected.requestModelId, selected.id].find(validModel) ?? body.model;
+  if (body.provider !== 'ollama' && responseModel.includes(apiKey)) throw invalidTurn();
+  const answer = {provider: body.provider, model: body.model, responseModel, ...turn};
   const encoded = JSON.stringify(answer);
   if (Buffer.byteLength(encoded) > 262144 || (body.authType === 'login' && loginSecrets(body.provider, apiKey, body.apiKey as string)
     .some(s => encoded.includes(JSON.stringify(s).slice(1,-1))))) throw invalidTurn();

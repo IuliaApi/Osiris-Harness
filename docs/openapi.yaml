@@ -1731,6 +1731,7 @@ components:
         sessionId: {type: string, minLength: 1}
         role: {type: string, enum: [user, assistant, system, tool]}
         content: {type: string, minLength: 1, maxLength: 10000}
+        model: {$ref: "#/components/schemas/ReplyModel"}
         createdAt: {type: string, format: date-time}
         agentEvents: {type: array, items: {$ref: "#/components/schemas/AgentEvent"}}
     Task:
@@ -1778,6 +1779,7 @@ components:
           properties:
             id: {type: string, minLength: 1}
             role: {type: string, enum: [user, assistant, system, tool]}
+            model: {$ref: "#/components/schemas/ReplyModel"}
             createdAt: {type: string, format: date-time}
             _links: {allOf: [{$ref: "#/components/schemas/Links"}, {required: [self]}]}
           additionalProperties: false
@@ -2034,6 +2036,11 @@ components:
     ChatProvider:
       type: string
       pattern: '^[a-z0-9][a-z0-9.-]{0,79}$'
+    ReplyModel:
+      type: string
+      minLength: 1
+      readOnly: true
+      description: "Model reported by the provider for this reply, or the dispatched model ID when unavailable. Omitted on messages without known model attribution, including manually posted assistant messages."
     ModelSelection:
       type: object
       properties:
@@ -2061,7 +2068,7 @@ components:
         question: {type: string, minLength: 1, maxLength: 6000}
         answer: {type: string, minLength: 1, maxLength: 10000}
         provider: {$ref: "#/components/schemas/ChatProvider"}
-        model: {type: string}
+        model: {$ref: "#/components/schemas/ReplyModel"}
       additionalProperties: false
     ChatPermissions:
       type: object
@@ -2090,10 +2097,10 @@ components:
     AgentInput:
       type: object
       allOf: [{$ref: "#/components/schemas/ModelSelection"}]
-      required: [message, tools]
+      required: [message]
       properties:
         message: {type: string, minLength: 1, maxLength: 6000}
-        tools: {type: boolean}
+        tools: {type: boolean, default: true, description: Enable workspace tools subject to the thread's permissions.}
         provider: {$ref: "#/components/schemas/ChatProvider"}
         model: {type: string}
       additionalProperties: false
@@ -2115,7 +2122,7 @@ components:
         sessionId: {type: string}
         prompt: {type: string}
         provider: {$ref: "#/components/schemas/ChatProvider"}
-        model: {type: string}
+        model: {type: string, description: "Dispatched model while the run is active; on completion, the model attributed to its final reply."}
         tools: {type: boolean}
         status: {enum: [ready, working, review, completed, failed, cancelled]}
         events: {type: array, items: {$ref: "#/components/schemas/AgentEvent"}}
@@ -2144,7 +2151,7 @@ components:
         userMessage: {$ref: "#/components/schemas/Message"}
         assistantMessage: {$ref: "#/components/schemas/Message"}
         provider: {$ref: "#/components/schemas/ChatProvider"}
-        model: {type: string, minLength: 1, maxLength: 10000}
+        model: {$ref: "#/components/schemas/ReplyModel"}
     CredentialInput:
       type: object
       required: [apiKey]

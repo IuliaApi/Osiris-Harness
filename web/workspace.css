@@ -166,7 +166,6 @@ button{cursor:pointer}
 .prompt-sign{color:#8cdbb9;line-height:30px}
 .prompt-line textarea{flex:1;min-width:0;background:none;color:var(--text);border:0;outline:none;resize:none;line-height:1.5;padding:5px 0;min-height:32px;max-height:min(12rem,25dvh);overflow-y:auto}
 .composer-footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
-#message-count{margin-inline-start:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
 #thread-model{min-width:0;overflow-wrap:anywhere;font-size:12px;color:var(--text)}
 .commands-only .tools-indicator{display:none}
 #thread-permissions{padding:3px 7px;border:1px solid var(--stroke);border-radius:4px;color:var(--text)}

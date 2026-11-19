@@ -48,7 +48,9 @@ class OllamaFixture(BaseHTTPRequestHandler):
             return
         case = data['messages'][-1]['content']
         status, body = {
-            'success': (200, b'{"done":true,"message":{"content":"fixture result","thinking":"hidden"}}'),
+            'success': (200, b'{"done":true,"model":"qa:model-v2","message":{"content":"fixture result","thinking":"hidden"}}'),
+            'missing model': (200, b'{"done":true,"message":{"content":"fixture result"}}'),
+            'unsafe model': (200, b'{"done":true,"model":"bad\\nlabel","message":{"content":"fixture result"}}'),
             'invalid': (200, b'bad data with private fixture content'),
             'quota': (429, b'private provider error'),
             'oversize': (200, b'z' * 262145),
@@ -82,7 +84,7 @@ class OllamaFixture(BaseHTTPRequestHandler):
         message = {'role':'assistant', 'content':'' if name else content}
         if name:
             message['tool_calls'] = [{'function':{'name':name,'arguments':args}}]
-        result = json.dumps({'model':'qa:agent','done':True,'message':message}).encode()
+        result = json.dumps({'model':'qa:agent-tool' if name else 'qa:agent-final','done':True,'message':message}).encode()
         self.send_response(200)
         self.send_header('Content-Length',str(len(result)))
         self.end_headers()
@@ -94,10 +96,11 @@ class OllamaFixture(BaseHTTPRequestHandler):
 
 php = r'''
 require 'backend/bootstrap.php';
-foreach (['success'=>200,'invalid'=>502,'quota'=>503,'oversize'=>502] as $case=>$expected) {
+foreach (['success'=>200,'missing model'=>200,'unsafe model'=>200,'invalid'=>502,'quota'=>503,'oversize'=>502] as $case=>$expected) {
   try {
     $answer = AIProvider::reply($case, [], ['title'=>'fixture'], null, 'ollama', 'qa:model', null);
-    if ($expected!==200 || $answer!==['provider'=>'ollama','model'=>'qa:model','text'=>'fixture result']) { throw new RuntimeException('Wrong result'); }
+    $expectedModel = $case === 'success' ? 'qa:model-v2' : 'qa:model';
+    if ($expected!==200 || $answer!==['provider'=>'ollama','model'=>$expectedModel,'text'=>'fixture result']) { throw new RuntimeException('Wrong result'); }
   } catch (ApiError $e) {
     if ($e->httpStatus!==$expected || str_contains($e->getMessage(),'private')) { throw $e; }
   }

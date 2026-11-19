@@ -78,7 +78,7 @@ final class AIProvider
     public static function reply(string $prompt, array $history, array $session, ?array $project, string $provider, string $model, #[SensitiveParameter] ?string $key): array
     {
         $turn = self::step($prompt, $history, $session, $project, $provider, $model, $key, [], []);
-        return ['provider' => $provider, 'model' => $model, 'text' => $turn['text']];
+        return ['provider' => $provider, 'model' => $turn['model'], 'text' => $turn['text']];
     }
 
     public static function step(string $prompt, array $history, array $session, ?array $project, string $provider, string $model, #[SensitiveParameter] ?string $key, array $tools, array $steps): array
@@ -153,10 +153,13 @@ final class AIProvider
             if (($response['provider'] ?? null) !== $provider || ($response['model'] ?? null) !== $model) {
                 throw new ApiError(502, 'AI router returned an unexpected provider or model', 'ai_upstream_failure');
             }
-            $turn = ModelToolsProtocol::turn('router', $response, $tools !== []);
+            $reported = $response['responseModel'] ?? null;
         } else {
-            $turn = self::directTurn($provider, $model, $system, $messages, $tools, $steps, $key);
+            $response = self::directResponse($provider, $model, $system, $messages, $tools, $steps, $key);
+            $reported = $response['model'] ?? null;
         }
+        $turn = ModelToolsProtocol::turn($routed ? 'router' : $provider, $response, $tools !== []);
+        $turn['model'] = is_string($reported) && self::validModel($reported, $provider) ? $reported : $model;
         if ($key !== null && $key !== '' && self::containsCredential($turn, $key)) {
             throw new ApiError(502, 'AI provider returned unsafe content', 'ai_upstream_failure');
         }
@@ -169,7 +172,7 @@ final class AIProvider
         return $turn;
     }
 
-    private static function directTurn(string $provider, string $model, string $system, array $messages,
+    private static function directResponse(string $provider, string $model, string $system, array $messages,
         array $tools, array $steps, #[SensitiveParameter] ?string $key): array
     {
         if ($provider === 'openai') {
@@ -184,13 +187,12 @@ final class AIProvider
             $headers = [];
         }
         $body = ModelToolsProtocol::payload($provider, $model, $system, $messages, $tools, $steps);
-        $response = self::request($url, $headers, $body, $provider);
-        return ModelToolsProtocol::turn($provider, $response, $tools !== []);
+        return self::request($url, $headers, $body, $provider);
     }
 
     private static function containsCredential(array $turn, #[SensitiveParameter] string $key): bool
     {
-        if (str_contains($turn['text'], $key)) { return true; }
+        if (str_contains($turn['text'], $key) || str_contains($turn['model'], $key)) { return true; }
         $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR;
         $encodedKey = substr(json_encode($key, $flags), 1, -1);
         foreach ($turn['calls'] as $call) {

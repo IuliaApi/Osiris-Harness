@@ -113,11 +113,12 @@ final class ThreadCommands
             return [$dispatch,$key,$session,$this->store->projectForSession($session),$history];
         });
         try {
-            $answer = AIProvider::reply($question,$history,$session,$project,$provider,$model,$key)['text'];
-            return inDatabaseTransaction($this->db, function () use ($question,$answer,$provider,$model,$dispatch) {
+            $reply = AIProvider::reply($question,$history,$session,$project,$provider,$model,$key);
+            return inDatabaseTransaction($this->db, function () use ($question,$reply,$provider,$dispatch) {
                 $this->auth->authenticate(Auth::cookieToken());
                 $this->requireActive();
                 $id = 'aside_' . bin2hex(random_bytes(12));
+                ['text' => $answer, 'model' => $model] = $reply;
                 executeSql($this->db, 'INSERT INTO thread_asides(id,session_id,user_id,question,answer,provider,model) VALUES (?,?,?,?,?,?,?)',
                     [$id,$this->session,$this->user,$question,$answer,$provider,$model]);
                 SessionChat::settle($this->db,$dispatch,'answered');

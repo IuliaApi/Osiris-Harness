@@ -9,6 +9,7 @@ const {spawn} = require('node:child_process');
 const root = path.join(__dirname, '..', 'web');
 const link = (href, method = 'GET') => ({href, method});
 const nativeModel = 'family/'.padEnd(240, 'm');
+const producedModel = 'GPT-Resolved-2026-10-15';
 const code = '<script>notExecutable()</script>\n';
 const reply = 'Example:\n```html\n' + code + '```\nEnd.';
 const providers = [
@@ -48,7 +49,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && pathname === '/turn/step') {
       await stepGate.promise;
-      messages.push({id:'u', role:'user', content:run.prompt}, {id:'a', role:'assistant', content:reply});
+      messages.push({id:'u', role:'user', content:run.prompt}, {id:'a', role:'assistant', content:reply, model:producedModel});
       run = {...run, status:'completed', _links:{}};
       return json({error:'Upstream response lost after saving', code:'ai_upstream_unavailable'}, 503);
     }
@@ -188,7 +189,6 @@ async function main() {
   const draft = Array.from({length:16}, (_, i) => 'Draft line ' + i).join('\n');
   await fill(draft);
   assert(await page(h => document.querySelector('#message-text').offsetHeight > h, shortHeight));
-  assert.match(await page(() => document.querySelector('#message-count').textContent), new RegExp('^' + draft.length + ' / '));
   await select('two'); await opened('two'); await fill('Another draft');
   await select('one'); await opened('one'); assert.equal(await page(input), draft);
 
@@ -233,6 +233,7 @@ async function main() {
   await until('ambiguous step failure navigation', () => location.pathname === '/errors/503/ai_upstream_unavailable');
   await page(() => history.back()); await opened('one');
   await until('saved reply', () => !!document.querySelector('#chat-history .assistant pre code'));
+  assert.equal(await page(() => document.querySelector('#chat-history .assistant .message-label').firstChild.textContent), producedModel);
   assert.equal(await page(input), 'Keep this next draft');
   assert.equal(await page(() => document.querySelector('#chat-history pre code').textContent), code);
   assert.equal(await page(() => document.querySelectorAll('#chat-history script, #chat-history .user + .user').length), 0);
